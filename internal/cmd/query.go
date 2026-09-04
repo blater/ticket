@@ -26,8 +26,9 @@ Examples:
   tk query '.[] | {id: .ID, title: .Title}'   # Custom output format
 
 JSON fields: ID, Status, Type, Priority, Assignee, Parent, ExternalRef, PR,
-             Tags, Deps, Links, Created, Title, Description, Design,
-             Acceptance, Notes`,
+             Delivery, BaseCommit, Branch, DeliveredCommit, CheckpointTag,
+             Evidence, Tags, Deps, Links, Created, Title, Description,
+             Design, Acceptance, Notes`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		tickets, err := store.List()

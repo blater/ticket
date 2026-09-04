@@ -30,7 +30,7 @@ Updated tic-a1b2 -> closed
 
 ## Overview
 
-`tk` stores issues as markdown files with YAML frontmatter in a `.tickets/` directory, enabling easy content searching without bloating context windows. Based on Unix philosophy principles, it provides:
+`tk` stores issues as Markdown files with YAML frontmatter in a project-configured directory, enabling easy content searching without bloating context windows. Projects can commit a visible `ticket.yaml` that selects a source-controlled location such as `docs/tickets/`; projects without configuration continue to use `.tickets/`.
 
 - **Dependency tracking** with cycle detection
 - **Atomic claims** to prevent race conditions
@@ -89,7 +89,9 @@ Workflow:
 - Use `tk ready` to find tickets ready to work on
 - Use `tk start <id>` to claim a ticket before working on it
 - Use `tk add-note <id> "progress update"` to document progress
-- Use `tk close <id>` when complete
+- Commit with a `Ticket: <id>` trailer when project policy requires it
+- Use `tk close <id> --commit <commit>` when complete
+- Use `tk validate` before promotion
 ```
 
 Optionally, add to `.claude/settings.local.json` to allow ticket commands:
@@ -113,7 +115,8 @@ This project uses a CLI ticket system. Run `tk` for help. Key commands:
 - tk ready          List tickets ready to work on
 - tk start <id>     Claim a ticket
 - tk show <id>      View ticket details
-- tk close <id>     Mark complete
+- tk close <id> --commit <commit>  Verify and mark a delivery complete
+- tk validate       Validate graph and configured Git delivery links
 ```
 
 ### Claude Code Plugin
@@ -142,9 +145,10 @@ Then use `/tk` to get a comprehensive command reference and workflow guide.
 | `external-ref <id> [ref]` | Set or clear external reference (omit ref to clear) |
 | `pr <id> [ref]` | Set or clear PR/MR reference (omit ref to clear) |
 | `start <id>` | Mark as in_progress |
-| `close <id>` | Mark as closed |
+| `close <id>` | Verify configured delivery metadata and mark as closed |
 | `reopen <id>` | Revert to open status |
 | `status <id> <status>` | Update status (open\|in_progress\|closed) |
+| `validate` | Validate ticket graph and Git delivery links |
 
 ### Create Options
 
@@ -153,13 +157,28 @@ tk create "My ticket title" \
   -d "Description text" \
   --design "Design notes" \
   --acceptance "Acceptance criteria" \
-  -t feature \           # bug|feature|task|epic|chore (default: task)
+  -t story \             # bug|feature|story|investigation|task|epic|chore
+  --delivery code \      # code|documentation|evidence|none
   -p 1 \                 # Priority 0-4, 0=highest (default: 2)
   -a "John Doe" \        # Assignee (defaults to git user.name)
   --external-ref gh-123 \# External reference (e.g., JIRA-456)
   --pr gh-pr-42 \        # Pull/merge request reference (e.g., !123, URL)
   --parent tic-abc1 \    # Parent ticket ID
   --tags backend,urgent  # Comma-separated tags
+```
+
+When commit-link policy is enabled, close a code or documentation delivery with
+the commit carrying its exact ticket trailer:
+
+```text
+Ticket: tic-a1b2
+```
+
+```bash
+tk close tic-a1b2 --commit HEAD \
+  --checkpoint-tag perf-checkpoint-a1b2 \
+  --evidence docs/performance-checkpoints.md
+tk validate --commits origin/main..HEAD --ticket tic-a1b2
 ```
 
 ### Dependency Management
@@ -254,6 +273,13 @@ status: open
 type: task
 priority: 2
 assignee: John Doe
+delivery: code
+base-commit: 0123456789abcdef
+branch: ticket/tic-a1b2-description
+delivered-commit: fedcba9876543210
+checkpoint-tag: perf-checkpoint-a1b2
+evidence:
+  - docs/performance-checkpoints.md
 tags:
   - backend
   - urgent
@@ -340,11 +366,49 @@ tk start abc      # matches tic-abc1
 
 ### Directory Discovery
 
-`tk` searches parent directories for `.tickets/`. Override with the `TICKETS_DIR` environment variable:
+For a visible, source-controlled project configuration, add `ticket.yaml` at
+the project root:
+
+```yaml
+tickets-directory: docs/tickets
+delivery:
+  require-commit-links: true
+  commit-trailer: Ticket
+  require-ticket-branch: true
+  branch-prefix: ticket/
+```
+
+`tk` searches the current directory and its parents for `ticket.yaml` and
+resolves a relative ticket directory against the directory containing that
+file. If no project configuration exists, it searches the same path for the
+legacy `.tickets/` directory and finally defaults to `.tickets/` in the current
+directory.
+
+`TICKETS_DIR` remains the explicit ticket-directory override. When a project
+configuration is present, the override changes only the storage location and
+retains its delivery policy:
 
 ```bash
-export TICKETS_DIR=/path/to/.tickets
+export TICKETS_DIR=/path/to/tickets
 ```
+
+A configured ticket directory may contain a source-controlled `README.md`;
+`tk` reserves and ignores that exact filename while continuing to report
+malformed ticket Markdown files as errors.
+
+With `require-commit-links` enabled, closing code and documentation tickets
+requires a valid Git commit containing the exact configured trailer value.
+Evidence deliveries must record a commit or evidence reference; only epics may
+use `delivery: none`. With `require-ticket-branch` enabled, `tk start` requires
+and records a branch named `<branch-prefix><ticket-id>[-description]` together
+with the full base commit.
+
+`tk validate` checks graph and delivery metadata. `tk validate --commits <revision-range>`
+rejects trailers naming tickets absent from the configured
+store; adding `--ticket <id>` also requires every non-merge commit in that
+explicit range to carry the ticket trailer. Unknown YAML frontmatter fields are
+preserved when a ticket is rewritten, allowing project-specific metadata
+without data loss.
 
 ### Pager Support
 
@@ -357,7 +421,9 @@ export TICKET_PAGER=cat  # disable paging
 
 ### Atomic Claims
 
-The `start` command uses file locking to prevent race conditions when multiple agents claim tickets concurrently.
+The `start` command uses file locking to prevent races within one working tree.
+Separate Git worktrees have separate ticket files; shared worktree-safe claim
+leases are planned and must be used before treating claims as repository-wide.
 
 ## Development
 
@@ -426,7 +492,8 @@ cycles := tk.DetectCycles(allTickets)
 │   └── config/         # Configuration
 ├── pkg/ticket/         # Importable library (types, store, deps, search, stats)
 ├── test/component/     # Component tests against the real binary
-├── .tickets/           # Ticket storage directory
+├── ticket.yaml         # Optional visible project configuration
+├── docs/tickets/       # Example configured ticket storage directory
 ├── Makefile
 └── go.mod
 ```

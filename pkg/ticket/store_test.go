@@ -145,6 +145,22 @@ func (s *StoreSuite) TestList_SkipsNonMdFiles() {
 	require.Equal(s.T(), "tic-actual", list[0].ID)
 }
 
+func (s *StoreSuite) TestStoreOperationsIgnoreReadme() {
+	readmePath := filepath.Join(s.store.TicketsDir(), TicketReadmeName)
+	require.NoError(s.T(), os.WriteFile(readmePath, []byte("# Project tickets\n"), 0644))
+
+	list, err := s.store.List()
+	require.NoError(s.T(), err)
+	require.Empty(s.T(), list)
+
+	ids, err := s.store.ListIDs()
+	require.NoError(s.T(), err)
+	require.Empty(s.T(), ids)
+
+	_, err = s.store.ResolveID("README")
+	require.ErrorContains(s.T(), err, "ticket not found")
+}
+
 func (s *StoreSuite) TestList_ReadError() {
 	invalidFile := filepath.Join(s.store.TicketsDir(), "tic-invalid.md")
 	require.NoError(s.T(), os.WriteFile(invalidFile, []byte("not valid yaml frontmatter"), 0644))
@@ -274,6 +290,31 @@ func (s *StoreSuite) TestAtomicClaim_Success() {
 	read, err := s.store.Read("tic-claim1")
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), StatusInProgress, read.Status)
+}
+
+func (s *StoreSuite) TestAtomicClaimWithPersistsClaimMetadata() {
+	ticket := &Ticket{
+		ID:      "tic-claim-context",
+		Status:  StatusOpen,
+		Title:   "Claim with context",
+		Created: time.Now().UTC(),
+	}
+	require.NoError(s.T(), s.store.Write(ticket))
+
+	claimed, err := s.store.AtomicClaimWith("tic-claim-context", func(ticket *Ticket) error {
+		ticket.BaseCommit = "abc123"
+		ticket.Branch = "ticket/tic-claim-context"
+		return nil
+	})
+
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), "abc123", claimed.BaseCommit)
+	require.Equal(s.T(), "ticket/tic-claim-context", claimed.Branch)
+
+	read, err := s.store.Read("tic-claim-context")
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), claimed.BaseCommit, read.BaseCommit)
+	require.Equal(s.T(), claimed.Branch, read.Branch)
 }
 
 func (s *StoreSuite) TestAtomicClaim_AlreadyInProgress() {

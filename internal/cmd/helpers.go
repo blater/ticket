@@ -28,9 +28,15 @@ func resolveAndReadTicket(idArg string) (*tk.Ticket, error) {
 
 // updateTicketStatus updates a ticket's status and prints a confirmation message.
 func updateTicketStatus(cmd *cobra.Command, idArg string, newStatus tk.Status) error {
+	if cfg.Delivery.RequireCommitLinks && newStatus == tk.StatusClosed {
+		return fmt.Errorf("delivery policy requires tk close with verified delivery metadata")
+	}
 	ticket, err := resolveAndReadTicket(idArg)
 	if err != nil {
 		return err
+	}
+	if newStatus == tk.StatusInProgress && ticketRequiresBranch(ticket) {
+		return fmt.Errorf("branch policy requires tk start to capture and verify Git context")
 	}
 
 	ticket.Status = newStatus

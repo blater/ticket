@@ -1,8 +1,8 @@
 // Package ticket provides a filesystem-backed ticket management library.
 //
-// Tickets are stored as markdown files with YAML frontmatter in a .tickets/
-// directory. Each ticket has an ID, status, type, priority, tags, dependencies,
-// and markdown body sections (title, description, design, acceptance criteria, notes).
+// Tickets are stored as Markdown files with YAML frontmatter in a configured
+// directory. Each ticket has an ID, status, type, priority, delivery metadata,
+// tags, dependencies, and Markdown body sections.
 //
 // Usage:
 //
@@ -74,15 +74,17 @@ func ParseStatus(s string) (Status, error) {
 type Type string
 
 const (
-	TypeTask    Type = "task"
-	TypeBug     Type = "bug"
-	TypeFeature Type = "feature"
-	TypeEpic    Type = "epic"
-	TypeChore   Type = "chore"
+	TypeTask          Type = "task"
+	TypeBug           Type = "bug"
+	TypeFeature       Type = "feature"
+	TypeStory         Type = "story"
+	TypeInvestigation Type = "investigation"
+	TypeEpic          Type = "epic"
+	TypeChore         Type = "chore"
 )
 
 // ValidTypes contains all valid type values in display order.
-var ValidTypes = []Type{TypeTask, TypeBug, TypeFeature, TypeEpic, TypeChore}
+var ValidTypes = []Type{TypeTask, TypeBug, TypeFeature, TypeStory, TypeInvestigation, TypeEpic, TypeChore}
 
 // String returns the string representation of the type.
 func (t Type) String() string {
@@ -92,7 +94,7 @@ func (t Type) String() string {
 // IsValid checks if the type is valid.
 func (t Type) IsValid() bool {
 	switch t {
-	case TypeTask, TypeBug, TypeFeature, TypeEpic, TypeChore:
+	case TypeTask, TypeBug, TypeFeature, TypeStory, TypeInvestigation, TypeEpic, TypeChore:
 		return true
 	default:
 		return false
@@ -108,6 +110,10 @@ func ParseType(s string) (Type, error) {
 		return TypeBug, nil
 	case "feature":
 		return TypeFeature, nil
+	case "story":
+		return TypeStory, nil
+	case "investigation":
+		return TypeInvestigation, nil
 	case "epic":
 		return TypeEpic, nil
 	case "chore":
@@ -115,6 +121,64 @@ func ParseType(s string) (Type, error) {
 	default:
 		return "", fmt.Errorf("invalid type: %s", s)
 	}
+}
+
+// Delivery describes the durable output required to close a ticket.
+type Delivery string
+
+const (
+	DeliveryCode          Delivery = "code"
+	DeliveryDocumentation Delivery = "documentation"
+	DeliveryEvidence      Delivery = "evidence"
+	DeliveryNone          Delivery = "none"
+)
+
+// ValidDeliveries contains all valid delivery classifications.
+var ValidDeliveries = []Delivery{DeliveryCode, DeliveryDocumentation, DeliveryEvidence, DeliveryNone}
+
+// String returns the string representation of the delivery classification.
+func (d Delivery) String() string {
+	return string(d)
+}
+
+// IsValid checks if the delivery classification is valid.
+func (d Delivery) IsValid() bool {
+	switch d {
+	case DeliveryCode, DeliveryDocumentation, DeliveryEvidence, DeliveryNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// ParseDelivery parses a delivery classification.
+func ParseDelivery(value string) (Delivery, error) {
+	delivery := Delivery(value)
+	if !delivery.IsValid() {
+		return "", fmt.Errorf("invalid delivery: %s", value)
+	}
+	return delivery, nil
+}
+
+// DefaultDelivery returns the default durable output for a ticket type.
+func DefaultDelivery(ticketType Type) Delivery {
+	switch ticketType {
+	case TypeEpic:
+		return DeliveryNone
+	case TypeInvestigation:
+		return DeliveryEvidence
+	default:
+		return DeliveryCode
+	}
+}
+
+// EffectiveDelivery returns the explicit delivery classification or the
+// default for the ticket type when reading an older ticket.
+func (t *Ticket) EffectiveDelivery() Delivery {
+	if t.Delivery != "" {
+		return t.Delivery
+	}
+	return DefaultDelivery(t.Type)
 }
 
 // Priority constants define the valid range for ticket priorities.
@@ -142,18 +206,25 @@ type Note struct {
 // Ticket represents a ticket in the system.
 type Ticket struct {
 	// Frontmatter fields
-	ID          string    `yaml:"id"`
-	Status      Status    `yaml:"status"`
-	Type        Type      `yaml:"type,omitempty"`
-	Priority    int       `yaml:"priority,omitempty"`
-	Assignee    string    `yaml:"assignee,omitempty"`
-	Parent      string    `yaml:"parent,omitempty"`
-	ExternalRef string    `yaml:"external-ref,omitempty"`
-	PR          string    `yaml:"pr,omitempty"`
-	Tags        []string  `yaml:"tags,omitempty"`
-	Deps        []string  `yaml:"deps,omitempty"`
-	Links       []string  `yaml:"links,omitempty"`
-	Created     time.Time `yaml:"created"`
+	ID              string         `yaml:"id"`
+	Status          Status         `yaml:"status"`
+	Type            Type           `yaml:"type,omitempty"`
+	Priority        int            `yaml:"priority,omitempty"`
+	Assignee        string         `yaml:"assignee,omitempty"`
+	Parent          string         `yaml:"parent,omitempty"`
+	ExternalRef     string         `yaml:"external-ref,omitempty"`
+	PR              string         `yaml:"pr,omitempty"`
+	Delivery        Delivery       `yaml:"delivery,omitempty"`
+	BaseCommit      string         `yaml:"base-commit,omitempty"`
+	Branch          string         `yaml:"branch,omitempty"`
+	DeliveredCommit string         `yaml:"delivered-commit,omitempty"`
+	CheckpointTag   string         `yaml:"checkpoint-tag,omitempty"`
+	Evidence        []string       `yaml:"evidence,omitempty"`
+	Tags            []string       `yaml:"tags,omitempty"`
+	Deps            []string       `yaml:"deps,omitempty"`
+	Links           []string       `yaml:"links,omitempty"`
+	Created         time.Time      `yaml:"created"`
+	Extensions      map[string]any `yaml:",inline" json:"Extensions,omitempty"`
 
 	// Body fields (not in frontmatter)
 	Title       string `yaml:"-"`

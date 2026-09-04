@@ -51,6 +51,7 @@ func (s *CmdSuite) SetupTest() {
 	createFlags.assignee = ""
 	createFlags.externalRef = ""
 	createFlags.pr = ""
+	createFlags.delivery = ""
 	createFlags.parent = ""
 	createFlags.tags = nil
 	exportFlags.format = "json"
@@ -60,6 +61,11 @@ func (s *CmdSuite) SetupTest() {
 	bulkFlags.status = ""
 	bulkFlags.assignee = ""
 	bulkFlags.dryRun = false
+	closeFlags.commit = ""
+	closeFlags.checkpointTag = ""
+	closeFlags.evidence = nil
+	validateFlags.commits = ""
+	validateFlags.ticket = ""
 
 	s.cleanup = func() {
 		_ = os.RemoveAll(tempDir)
@@ -283,6 +289,7 @@ func (s *CmdSuite) TestCreateFlagsInit() {
 	// Test that create flags are initialized
 	require.NotNil(s.T(), createCmd.Flags().Lookup("description"))
 	require.NotNil(s.T(), createCmd.Flags().Lookup("type"))
+	require.NotNil(s.T(), createCmd.Flags().Lookup("delivery"))
 	require.NotNil(s.T(), createCmd.Flags().Lookup("priority"))
 	require.NotNil(s.T(), createCmd.Flags().Lookup("assignee"))
 	require.NotNil(s.T(), createCmd.Flags().Lookup("parent"))
@@ -722,7 +729,7 @@ func (s *CmdSuite) TestHelpOutput() {
 	require.Contains(s.T(), output, "--priority")
 
 	// Verify footer about .tickets/
-	require.Contains(s.T(), output, "Tickets stored as markdown files in .tickets/")
+	require.Contains(s.T(), output, "Tickets are stored in the directory selected by ticket.yaml")
 	require.Contains(s.T(), output, "Supports partial ID matching")
 }
 

@@ -18,23 +18,30 @@ var importFlags struct {
 // importTicket is a struct for JSON import that mirrors tk.Ticket
 // but uses concrete types for unmarshaling.
 type importTicket struct {
-	ID          string    `json:"ID"`
-	Status      string    `json:"Status"`
-	Type        string    `json:"Type"`
-	Priority    int       `json:"Priority"`
-	Assignee    string    `json:"Assignee"`
-	Parent      string    `json:"Parent"`
-	ExternalRef string    `json:"ExternalRef"`
-	PR          string    `json:"PR"`
-	Tags        []string  `json:"Tags"`
-	Deps        []string  `json:"Deps"`
-	Links       []string  `json:"Links"`
-	Created     time.Time `json:"Created"`
-	Title       string    `json:"Title"`
-	Description string    `json:"Description"`
-	Design      string    `json:"Design"`
-	Acceptance  string    `json:"Acceptance"`
-	Notes       []struct {
+	ID              string         `json:"ID"`
+	Status          string         `json:"Status"`
+	Type            string         `json:"Type"`
+	Priority        int            `json:"Priority"`
+	Assignee        string         `json:"Assignee"`
+	Parent          string         `json:"Parent"`
+	ExternalRef     string         `json:"ExternalRef"`
+	PR              string         `json:"PR"`
+	Delivery        string         `json:"Delivery"`
+	BaseCommit      string         `json:"BaseCommit"`
+	Branch          string         `json:"Branch"`
+	DeliveredCommit string         `json:"DeliveredCommit"`
+	CheckpointTag   string         `json:"CheckpointTag"`
+	Evidence        []string       `json:"Evidence"`
+	Extensions      map[string]any `json:"Extensions"`
+	Tags            []string       `json:"Tags"`
+	Deps            []string       `json:"Deps"`
+	Links           []string       `json:"Links"`
+	Created         time.Time      `json:"Created"`
+	Title           string         `json:"Title"`
+	Description     string         `json:"Description"`
+	Design          string         `json:"Design"`
+	Acceptance      string         `json:"Acceptance"`
+	Notes           []struct {
 		Timestamp time.Time `json:"Timestamp"`
 		Content   string    `json:"Content"`
 	} `json:"Notes"`
@@ -157,6 +164,15 @@ func convertImportTicket(t importTicket) (*tk.Ticket, error) {
 		created = time.Now().UTC()
 	}
 
+	delivery := tk.DefaultDelivery(ticketType)
+	if t.Delivery != "" {
+		parsed, err := tk.ParseDelivery(t.Delivery)
+		if err != nil {
+			return nil, fmt.Errorf("invalid delivery: %w", err)
+		}
+		delivery = parsed
+	}
+
 	// Convert notes
 	notes := make([]tk.Note, len(t.Notes))
 	for i, n := range t.Notes {
@@ -167,23 +183,30 @@ func convertImportTicket(t importTicket) (*tk.Ticket, error) {
 	}
 
 	return &tk.Ticket{
-		ID:          t.ID,
-		Status:      status,
-		Type:        ticketType,
-		Priority:    t.Priority,
-		Assignee:    t.Assignee,
-		Parent:      t.Parent,
-		ExternalRef: t.ExternalRef,
-		PR:          t.PR,
-		Tags:        t.Tags,
-		Deps:        t.Deps,
-		Links:       t.Links,
-		Created:     created,
-		Title:       t.Title,
-		Description: t.Description,
-		Design:      t.Design,
-		Acceptance:  t.Acceptance,
-		Notes:       notes,
+		ID:              t.ID,
+		Status:          status,
+		Type:            ticketType,
+		Priority:        t.Priority,
+		Assignee:        t.Assignee,
+		Parent:          t.Parent,
+		ExternalRef:     t.ExternalRef,
+		PR:              t.PR,
+		Delivery:        delivery,
+		BaseCommit:      t.BaseCommit,
+		Branch:          t.Branch,
+		DeliveredCommit: t.DeliveredCommit,
+		CheckpointTag:   t.CheckpointTag,
+		Evidence:        t.Evidence,
+		Extensions:      t.Extensions,
+		Tags:            t.Tags,
+		Deps:            t.Deps,
+		Links:           t.Links,
+		Created:         created,
+		Title:           t.Title,
+		Description:     t.Description,
+		Design:          t.Design,
+		Acceptance:      t.Acceptance,
+		Notes:           notes,
 	}, nil
 }
 
