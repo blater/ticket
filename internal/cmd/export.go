@@ -66,22 +66,28 @@ func exportJSON(w io.Writer, tickets any) error {
 
 func exportCSV(w io.Writer, tickets any) error {
 	ticketSlice, ok := tickets.([]*struct {
-		ID          string
-		Status      string
-		Type        string
-		Priority    int
-		Assignee    string
-		Parent      string
-		ExternalRef string
-		PR          string
-		Tags        []string
-		Deps        []string
-		Links       []string
-		Created     string
-		Title       string
-		Description string
-		Design      string
-		Acceptance  string
+		ID              string
+		Status          string
+		Type            string
+		Priority        int
+		Assignee        string
+		Parent          string
+		ExternalRef     string
+		PR              string
+		Delivery        string
+		BaseCommit      string
+		Branch          string
+		DeliveredCommit string
+		CheckpointTag   string
+		Evidence        []string
+		Tags            []string
+		Deps            []string
+		Links           []string
+		Created         string
+		Title           string
+		Description     string
+		Design          string
+		Acceptance      string
 	})
 	// Type assertion won't work directly, let's use the actual type
 	_ = ticketSlice
@@ -104,7 +110,9 @@ func exportCSV(w io.Writer, tickets any) error {
 	// CSV header
 	headers := []string{
 		"ID", "Status", "Type", "Priority", "Assignee", "Parent",
-		"ExternalRef", "PR", "Tags", "Deps", "Links", "Created",
+		"ExternalRef", "PR", "Delivery", "BaseCommit", "Branch",
+		"DeliveredCommit", "CheckpointTag", "Evidence",
+		"Tags", "Deps", "Links", "Created",
 		"Title", "Description", "Design", "Acceptance",
 	}
 	if err := csvWriter.Write(headers); err != nil {
@@ -122,6 +130,12 @@ func exportCSV(w io.Writer, tickets any) error {
 			getString(t, "Parent"),
 			getString(t, "ExternalRef"),
 			getString(t, "PR"),
+			getString(t, "Delivery"),
+			getString(t, "BaseCommit"),
+			getString(t, "Branch"),
+			getString(t, "DeliveredCommit"),
+			getString(t, "CheckpointTag"),
+			joinStrings(t, "Evidence"),
 			joinStrings(t, "Tags"),
 			joinStrings(t, "Deps"),
 			joinStrings(t, "Links"),

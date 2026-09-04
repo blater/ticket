@@ -59,7 +59,8 @@ Available Commands:
     -d, --description      Description text
     --design               Design notes
     --acceptance           Acceptance criteria
-    -t, --type             Type (bug|feature|task|epic|chore) [default: task]
+    -t, --type             Type (bug|feature|story|investigation|task|epic|chore) [default: task]
+    --delivery             Delivery (code|documentation|evidence|none)
     -p, --priority         Priority %d-%d, %d=highest [default: %d]
     -a, --assignee         Assignee
     --external-ref         External reference (e.g., gh-123, JIRA-456)
@@ -71,31 +72,31 @@ Available Commands:
   external-ref <id> [ref]  Set or clear ticket external reference (omit ref to clear)
   pr <id> [ref]            Set or clear ticket PR/MR reference (omit ref to clear)
   start <id>               Set ticket status to in_progress
-  close <id>               Set ticket status to closed
+  close <id>               Verify delivery metadata and close a ticket
   reopen <id>              Set ticket status to open
   status <id> <status>     Update ticket status (open|in_progress|closed)
   list                     List tickets (alias: ls)
     --status               Filter by status (open|in_progress|closed)
-    -t, --type             Filter by type (task|bug|feature|epic|chore)
+    -t, --type             Filter by type (task|bug|feature|story|investigation|epic|chore)
     -a, --assignee         Filter by assignee
     -T, --tag              Filter by tag
     -s, --sort             Sort by field (priority|created|status|title)
     -r, --reverse          Reverse sort order
   ready                    List open/in_progress tickets with resolved deps
-    -t, --type             Filter by type (task|bug|feature|epic|chore)
+    -t, --type             Filter by type (task|bug|feature|story|investigation|epic|chore)
     -a, --assignee         Filter by assignee
     -T, --tag              Filter by tag
     -s, --sort             Sort by field (priority|created|status|title)
     -r, --reverse          Reverse sort order
   blocked                  List open/in_progress tickets with unresolved deps
-    -t, --type             Filter by type (task|bug|feature|epic|chore)
+    -t, --type             Filter by type (task|bug|feature|story|investigation|epic|chore)
     -a, --assignee         Filter by assignee
     -T, --tag              Filter by tag
     -s, --sort             Sort by field (priority|created|status|title)
     -r, --reverse          Reverse sort order
   closed                   List recently closed tickets
     --limit                Limit number of results [default: 20]
-    -t, --type             Filter by type (task|bug|feature|epic|chore)
+    -t, --type             Filter by type (task|bug|feature|story|investigation|epic|chore)
     -a, --assignee         Filter by assignee
     -T, --tag              Filter by tag
     -s, --sort             Sort by field (priority|created|status|title)
@@ -115,6 +116,7 @@ Available Commands:
     --status               Filter by status (open|in_progress|closed)
   stats                    Display project metrics
     --json                 Output as JSON
+  validate                 Validate ticket graph and Git delivery links
   export                   Export tickets to JSON or CSV
     --format               Output format (json|csv) [default: json]
     -o, --output           Output file (default: stdout)
@@ -133,7 +135,8 @@ Global Flags:
 
 Use "tk [command] --help" for more information about a command.
 
-Tickets stored as markdown files in .tickets/
+Tickets are stored in the directory selected by ticket.yaml, TICKETS_DIR,
+or the .tickets/ fallback.
 Supports partial ID matching (e.g., 'tk show 5c4' matches 'nw-5c46')
 `
 	fmt.Printf(helpText, tk.MinPriority, tk.MaxPriority, tk.MinPriority, tk.DefaultPriority)
@@ -188,6 +191,7 @@ func init() {
 	rootCmd.AddCommand(queryCmd)
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(statsCmd)
+	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(bulkCmd)

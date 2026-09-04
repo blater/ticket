@@ -20,6 +20,8 @@ const (
 	IDPrefix = "tic"
 	// IDRandomLength is the length of the random part of the ID.
 	IDRandomLength = 4
+	// TicketReadmeName is reserved for source-controlled store documentation.
+	TicketReadmeName = "README.md"
 )
 
 // Store handles ticket file operations on a .tickets/ directory.
@@ -90,7 +92,7 @@ func (s *Store) List() ([]*Ticket, error) {
 
 	var tickets []*Ticket
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+		if !isTicketFile(entry) {
 			continue
 		}
 
@@ -147,7 +149,7 @@ func (s *Store) ResolveID(partial string) (string, error) {
 
 	var matches []string
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+		if !isTicketFile(entry) {
 			continue
 		}
 
@@ -179,13 +181,17 @@ func (s *Store) ListIDs() ([]string, error) {
 
 	var ids []string
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".md" {
+		if !isTicketFile(entry) {
 			continue
 		}
 		ids = append(ids, strings.TrimSuffix(entry.Name(), ".md"))
 	}
 
 	return ids, nil
+}
+
+func isTicketFile(entry os.DirEntry) bool {
+	return !entry.IsDir() && entry.Name() != TicketReadmeName && filepath.Ext(entry.Name()) == ".md"
 }
 
 // EnsureDir ensures the tickets directory exists.
@@ -231,6 +237,13 @@ func (s *Store) SetPR(id, ref string) (*Ticket, error) {
 // checking the current status, and updating to in_progress only if the ticket is open.
 // Returns ErrAlreadyClaimed if the ticket is not in open status.
 func (s *Store) AtomicClaim(id string) (*Ticket, error) {
+	return s.AtomicClaimWith(id, nil)
+}
+
+// AtomicClaimWith atomically claims a ticket and applies prepare while the
+// ticket file is locked. prepare may attach branch and base-revision metadata
+// derived before the claim.
+func (s *Store) AtomicClaimWith(id string, prepare func(*Ticket) error) (*Ticket, error) {
 	path := filepath.Join(s.ticketsDir, id+".md")
 
 	// Open file for read/write
@@ -260,6 +273,11 @@ func (s *Store) AtomicClaim(id string) (*Ticket, error) {
 	// Check if claimable
 	if ticket.Status != StatusOpen {
 		return nil, fmt.Errorf("%w: status is %s", ErrAlreadyClaimed, ticket.Status)
+	}
+	if prepare != nil {
+		if err := prepare(ticket); err != nil {
+			return nil, fmt.Errorf("failed to prepare claim: %w", err)
+		}
 	}
 
 	// Update status

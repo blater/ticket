@@ -65,6 +65,8 @@ func (s *TicketSuite) TestParseType() {
 		{name: "task", input: "task", want: TypeTask},
 		{name: "bug", input: "bug", want: TypeBug},
 		{name: "feature", input: "feature", want: TypeFeature},
+		{name: "story", input: "story", want: TypeStory},
+		{name: "investigation", input: "investigation", want: TypeInvestigation},
 		{name: "epic", input: "epic", want: TypeEpic},
 		{name: "chore", input: "chore", want: TypeChore},
 		{name: "invalid", input: "invalid", wantErr: true},
@@ -87,6 +89,8 @@ func (s *TicketSuite) TestTypeString() {
 	require.Equal(s.T(), "task", TypeTask.String())
 	require.Equal(s.T(), "bug", TypeBug.String())
 	require.Equal(s.T(), "feature", TypeFeature.String())
+	require.Equal(s.T(), "story", TypeStory.String())
+	require.Equal(s.T(), "investigation", TypeInvestigation.String())
 	require.Equal(s.T(), "epic", TypeEpic.String())
 	require.Equal(s.T(), "chore", TypeChore.String())
 }
@@ -95,9 +99,25 @@ func (s *TicketSuite) TestTypeIsValid() {
 	require.True(s.T(), TypeTask.IsValid())
 	require.True(s.T(), TypeBug.IsValid())
 	require.True(s.T(), TypeFeature.IsValid())
+	require.True(s.T(), TypeStory.IsValid())
+	require.True(s.T(), TypeInvestigation.IsValid())
 	require.True(s.T(), TypeEpic.IsValid())
 	require.True(s.T(), TypeChore.IsValid())
 	require.False(s.T(), Type("invalid").IsValid())
+}
+
+func (s *TicketSuite) TestDeliveryClassification() {
+	require.Equal(s.T(), DeliveryCode, DefaultDelivery(TypeStory))
+	require.Equal(s.T(), DeliveryEvidence, DefaultDelivery(TypeInvestigation))
+	require.Equal(s.T(), DeliveryNone, DefaultDelivery(TypeEpic))
+
+	delivery, err := ParseDelivery("documentation")
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), DeliveryDocumentation, delivery)
+	require.True(s.T(), delivery.IsValid())
+
+	_, err = ParseDelivery("unknown")
+	require.Error(s.T(), err)
 }
 
 func (s *TicketSuite) TestParse() {
@@ -239,6 +259,45 @@ func (s *TicketSuite) TestRoundTrip() {
 	require.Equal(s.T(), original.Deps, parsed.Deps)
 	require.Equal(s.T(), original.Links, parsed.Links)
 	require.Equal(s.T(), original.Title, parsed.Title)
+}
+
+func (s *TicketSuite) TestRoundTripPreservesDeliveryAndExtensionFields() {
+	content := `---
+id: river-ab12
+status: in_progress
+type: story
+priority: 1
+delivery: code
+base-commit: abc123
+branch: ticket/river-ab12
+delivered-commit: def456
+checkpoint-tag: perf-checkpoint-ab12
+evidence:
+  - docs/performance-checkpoints.md
+review-lens: concurrency
+created: 2026-09-04T10:00:00Z
+---
+# Delivery metadata
+`
+
+	ticket, err := Parse([]byte(content))
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), DeliveryCode, ticket.Delivery)
+	require.Equal(s.T(), "abc123", ticket.BaseCommit)
+	require.Equal(s.T(), "ticket/river-ab12", ticket.Branch)
+	require.Equal(s.T(), "def456", ticket.DeliveredCommit)
+	require.Equal(s.T(), "perf-checkpoint-ab12", ticket.CheckpointTag)
+	require.Equal(s.T(), []string{"docs/performance-checkpoints.md"}, ticket.Evidence)
+	require.Equal(s.T(), "concurrency", ticket.Extensions["review-lens"])
+
+	ticket.Status = StatusClosed
+	rendered, err := ticket.Render()
+	require.NoError(s.T(), err)
+	require.Contains(s.T(), string(rendered), "review-lens: concurrency")
+
+	reparsed, err := Parse(rendered)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), ticket.Extensions, reparsed.Extensions)
 }
 
 func (s *TicketSuite) TestValidatePriority() {

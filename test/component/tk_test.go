@@ -17,19 +17,25 @@ import (
 
 // ticket mirrors the JSON output from commands with --json.
 type ticket struct {
-	ID          string   `json:"ID"`
-	Status      string   `json:"Status"`
-	Type        string   `json:"Type"`
-	Priority    int      `json:"Priority"`
-	Assignee    string   `json:"Assignee"`
-	Parent      string   `json:"Parent"`
-	ExternalRef string   `json:"ExternalRef"`
-	Tags        []string `json:"Tags"`
-	Deps        []string `json:"Deps"`
-	Links       []string `json:"Links"`
-	Title       string   `json:"Title"`
-	Description string   `json:"Description"`
-	Notes       []note   `json:"Notes"`
+	ID              string   `json:"ID"`
+	Status          string   `json:"Status"`
+	Type            string   `json:"Type"`
+	Priority        int      `json:"Priority"`
+	Assignee        string   `json:"Assignee"`
+	Parent          string   `json:"Parent"`
+	ExternalRef     string   `json:"ExternalRef"`
+	Delivery        string   `json:"Delivery"`
+	BaseCommit      string   `json:"BaseCommit"`
+	Branch          string   `json:"Branch"`
+	DeliveredCommit string   `json:"DeliveredCommit"`
+	CheckpointTag   string   `json:"CheckpointTag"`
+	Evidence        []string `json:"Evidence"`
+	Tags            []string `json:"Tags"`
+	Deps            []string `json:"Deps"`
+	Links           []string `json:"Links"`
+	Title           string   `json:"Title"`
+	Description     string   `json:"Description"`
+	Notes           []note   `json:"Notes"`
 }
 
 type note struct {
@@ -79,6 +85,20 @@ func (s *TKSuite) TearDownTest() {
 func (s *TKSuite) tk(args ...string) (string, error) {
 	cmd := exec.Command(s.binary, args...)
 	cmd.Env = append(os.Environ(), "TICKETS_DIR="+filepath.Join(s.workDir, ".tickets"))
+	cmd.Dir = s.workDir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// tkWithProjectConfig runs tk without TICKETS_DIR so visible project
+// configuration and parent discovery are exercised end to end.
+func (s *TKSuite) tkWithProjectConfig(args ...string) (string, error) {
+	cmd := exec.Command(s.binary, args...)
+	for _, value := range os.Environ() {
+		if !strings.HasPrefix(value, "TICKETS_DIR=") {
+			cmd.Env = append(cmd.Env, value)
+		}
+	}
 	cmd.Dir = s.workDir
 	out, err := cmd.CombinedOutput()
 	return string(out), err
@@ -244,6 +264,70 @@ func (s *TKSuite) TestStartCloseReopen() {
 	out = s.tkOK("reopen", "--json", id)
 	require.NoError(s.T(), json.Unmarshal([]byte(out), &t))
 	require.Equal(s.T(), "open", t.Status)
+}
+
+func (s *TKSuite) TestProjectConfigEnforcesBranchAndCommitLinks() {
+	require.NoError(s.T(), os.MkdirAll(filepath.Join(s.workDir, "docs", "tickets"), 0755))
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(s.workDir, "ticket.yaml"),
+		[]byte("tickets-directory: docs/tickets\ndelivery:\n  require-commit-links: true\n  commit-trailer: Ticket\n  require-ticket-branch: true\n  branch-prefix: ticket/\n"),
+		0644,
+	))
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(s.workDir, "docs", "tickets", "README.md"),
+		[]byte("# Tickets\n"),
+		0644,
+	))
+	s.gitOK("init", "-b", "main")
+	s.gitOK("config", "user.name", "Ticket Test")
+	s.gitOK("config", "user.email", "ticket@example.invalid")
+	s.gitOK("add", "ticket.yaml", "docs/tickets/README.md")
+	s.gitOK("commit", "-m", "Initialize ticket policy")
+
+	output, err := s.tkWithProjectConfig("create", "Linked delivery", "--type", "story")
+	require.NoError(s.T(), err, output)
+	id := strings.TrimSpace(output)
+	output, err = s.tkWithProjectConfig("start", id)
+	require.Error(s.T(), err)
+	require.Contains(s.T(), output, "does not identify ticket")
+
+	s.gitOK("switch", "-c", "ticket/"+id+"-linked-delivery")
+
+	output, err = s.tkWithProjectConfig("start", "--json", id)
+	require.NoError(s.T(), err, output)
+	var started ticket
+	require.NoError(s.T(), json.Unmarshal([]byte(output), &started))
+	require.NotEmpty(s.T(), started.BaseCommit)
+	require.Equal(s.T(), "ticket/"+id+"-linked-delivery", started.Branch)
+	output, err = s.tkWithProjectConfig("status", id, "closed")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), output, "requires tk close")
+
+	require.NoError(s.T(), os.WriteFile(filepath.Join(s.workDir, "delivery.txt"), []byte("delivered\n"), 0644))
+	s.gitOK("add", "delivery.txt", filepath.Join("docs", "tickets", id+".md"))
+	s.gitOK("commit", "-m", "Deliver linked story\n\nTicket: "+id)
+	commit := strings.TrimSpace(s.gitOK("rev-parse", "HEAD"))
+
+	output, err = s.tkWithProjectConfig("validate", "--commits", "HEAD^..HEAD", "--ticket", id)
+	require.NoError(s.T(), err, output)
+
+	output, err = s.tkWithProjectConfig("close", "--json", id, "--commit", "HEAD")
+	require.NoError(s.T(), err, output)
+	var closed ticket
+	require.NoError(s.T(), json.Unmarshal([]byte(output), &closed))
+	require.Equal(s.T(), "closed", closed.Status)
+	require.Equal(s.T(), commit, closed.DeliveredCommit)
+
+	output, err = s.tkWithProjectConfig("validate")
+	require.NoError(s.T(), err, output)
+}
+
+func (s *TKSuite) gitOK(args ...string) string {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = s.workDir
+	output, err := cmd.CombinedOutput()
+	require.NoError(s.T(), err, "git %s failed: %s", strings.Join(args, " "), output)
+	return string(output)
 }
 
 func (s *TKSuite) TestStatusCommand() {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/radutopala/ticket/internal/gitmeta"
 	tk "github.com/radutopala/ticket/pkg/ticket"
 )
 
@@ -19,8 +20,34 @@ var startCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		candidate, err := store.Read(id)
+		if err != nil {
+			return err
+		}
 
-		ticket, err := store.AtomicClaim(id)
+		var prepare func(*tk.Ticket) error
+		if ticketRequiresBranch(candidate) || ticketRequiresCommit(candidate) {
+			baseCommit, branch, err := gitmeta.New("").CurrentContext()
+			if err != nil {
+				return fmt.Errorf("failed to capture claim Git context: %w", err)
+			}
+			if ticketRequiresBranch(candidate) && !branchCarriesTicket(branch, id) {
+				return fmt.Errorf(
+					"branch %q does not identify ticket %s; expected %s%s[-description]",
+					branch,
+					id,
+					cfg.Delivery.BranchPrefix,
+					id,
+				)
+			}
+			prepare = func(ticket *tk.Ticket) error {
+				ticket.BaseCommit = baseCommit
+				ticket.Branch = branch
+				return nil
+			}
+		}
+
+		ticket, err := store.AtomicClaimWith(id, prepare)
 		if err != nil {
 			if errors.Is(err, tk.ErrAlreadyClaimed) {
 				return fmt.Errorf("cannot claim %s: %w", id, err)

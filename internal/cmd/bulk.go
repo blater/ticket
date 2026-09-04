@@ -58,6 +58,9 @@ var bulkStartCmd = &cobra.Command{
 }
 
 func runBulkAction(cmd *cobra.Command, newStatus tk.Status, actionVerb string) error {
+	if cfg.Delivery.RequireCommitLinks && newStatus == tk.StatusClosed {
+		return fmt.Errorf("delivery policy requires closing tickets individually with verified delivery metadata")
+	}
 	tickets, err := store.List()
 	if err != nil {
 		return err
@@ -70,6 +73,13 @@ func runBulkAction(cmd *cobra.Command, newStatus tk.Status, actionVerb string) e
 	}
 
 	filtered := tk.Filter(tickets, filterOpts)
+	if newStatus == tk.StatusInProgress {
+		for _, ticket := range filtered {
+			if ticketRequiresBranch(ticket) {
+				return fmt.Errorf("branch policy requires starting code and documentation tickets individually from their named Git branches")
+			}
+		}
+	}
 
 	if len(filtered) == 0 {
 		if jsonOutput {

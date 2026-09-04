@@ -20,6 +20,7 @@ var createFlags struct {
 	assignee    string
 	externalRef string
 	pr          string
+	delivery    string
 	parent      string
 	tags        []string
 }
@@ -82,6 +83,19 @@ var createCmd = &cobra.Command{
 			ticket.Type = tk.TypeTask
 		}
 
+		if createFlags.delivery != "" {
+			delivery, err := tk.ParseDelivery(createFlags.delivery)
+			if err != nil {
+				return err
+			}
+			ticket.Delivery = delivery
+		} else {
+			ticket.Delivery = tk.DefaultDelivery(ticket.Type)
+		}
+		if ticket.Delivery == tk.DeliveryNone && ticket.Type != tk.TypeEpic {
+			return fmt.Errorf("delivery none is valid only for epics")
+		}
+
 		if err := store.EnsureDir(); err != nil {
 			return fmt.Errorf("failed to create tickets directory: %w", err)
 		}
@@ -113,7 +127,8 @@ func init() {
 	createCmd.Flags().StringVarP(&createFlags.description, "description", "d", "", "Description text")
 	createCmd.Flags().StringVar(&createFlags.design, "design", "", "Design notes")
 	createCmd.Flags().StringVar(&createFlags.acceptance, "acceptance", "", "Acceptance criteria")
-	createCmd.Flags().StringVarP(&createFlags.ticketType, "type", "t", "task", "Type (bug|feature|task|epic|chore)")
+	createCmd.Flags().StringVarP(&createFlags.ticketType, "type", "t", "task", "Type (bug|feature|story|investigation|task|epic|chore)")
+	createCmd.Flags().StringVar(&createFlags.delivery, "delivery", "", "Delivery (code|documentation|evidence|none; default follows type)")
 	createCmd.Flags().IntVarP(&createFlags.priority, "priority", "p", tk.DefaultPriority, fmt.Sprintf("Priority %d-%d, %d=highest", tk.MinPriority, tk.MaxPriority, tk.MinPriority))
 	createCmd.Flags().StringVarP(&createFlags.assignee, "assignee", "a", "", "Assignee")
 	createCmd.Flags().StringVar(&createFlags.externalRef, "external-ref", "", "External reference (e.g., gh-123, JIRA-456)")
