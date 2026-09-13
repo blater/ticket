@@ -44,18 +44,12 @@ var createCmd = &cobra.Command{
 			createFlags.parent = resolvedParent
 		}
 
-		id, err := tk.GenerateID()
-		if err != nil {
-			return fmt.Errorf("failed to generate ID: %w", err)
-		}
-
 		assignee := createFlags.assignee
 		if assignee == "" {
 			assignee = getGitUserName()
 		}
 
 		ticket := &tk.Ticket{
-			ID:          id,
 			Status:      tk.StatusOpen,
 			Priority:    createFlags.priority,
 			Assignee:    assignee,
@@ -96,19 +90,15 @@ var createCmd = &cobra.Command{
 			return fmt.Errorf("delivery none is valid only for epics")
 		}
 
-		if err := store.EnsureDir(); err != nil {
-			return fmt.Errorf("failed to create tickets directory: %w", err)
-		}
-
-		if err := store.Write(ticket); err != nil {
-			return fmt.Errorf("failed to write ticket: %w", err)
+		if err := store.Create(ticket); err != nil {
+			return fmt.Errorf("failed to create ticket: %w", err)
 		}
 
 		if jsonOutput {
 			return outputJSON(cmd, ticket)
 		}
 
-		fmt.Println(id)
+		fmt.Println(ticket.ID)
 		return nil
 	},
 }

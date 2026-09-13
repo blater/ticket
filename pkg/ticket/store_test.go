@@ -3,6 +3,7 @@ package ticket
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,18 +44,101 @@ func (s *StoreSuite) TestOpen() {
 func (s *StoreSuite) TestGenerateID() {
 	id, err := GenerateID()
 	require.NoError(s.T(), err)
-	require.True(s.T(), len(id) > 0)
-	require.Contains(s.T(), id, IDPrefix+"-")
+	require.True(s.T(), strings.HasPrefix(id, IDPrefix+"-"))
+	require.Len(s.T(), strings.Split(strings.TrimPrefix(id, IDPrefix+"-"), "-"), 1)
 }
 
 func (s *StoreSuite) TestGenerateIDUnique() {
 	ids := make(map[string]bool)
 	for range 10 {
-		id, err := GenerateID()
+		id, err := s.store.GenerateID()
 		require.NoError(s.T(), err)
 		require.False(s.T(), ids[id], "duplicate ID generated: %s", id)
 		ids[id] = true
+		require.NoError(s.T(), s.store.Write(&Ticket{ID: id, Status: StatusOpen, Created: time.Now().UTC()}))
 	}
+}
+
+func TestGenerateUniqueIDEscalatesWordCount(t *testing.T) {
+	var calls []int
+	got, err := generateUniqueID(
+		map[string]struct{}{"tic-otter": {}, "tic-bright-otter": {}},
+		func(words int) (string, error) {
+			calls = append(calls, words)
+			switch words {
+			case 1:
+				return "otter", nil
+			case 2:
+				return "bright-otter", nil
+			default:
+				return "calm-bright-otter", nil
+			}
+		},
+		func() (string, error) { return "tic-fallback-guid", nil },
+	)
+	require.NoError(t, err)
+	require.Equal(t, "tic-calm-bright-otter", got)
+	require.Equal(t, []int{1, 2, 3}, calls)
+}
+
+func TestGenerateUniqueIDAdvancesWhenReservationCollides(t *testing.T) {
+	var calls []int
+	var reserved []string
+	got, err := generateUniqueIDWithReservation(nil,
+		func(words int) (string, error) {
+			calls = append(calls, words)
+			if words == 1 {
+				return "otter", nil
+			}
+			return "bright-otter", nil
+		},
+		func() (string, error) { return "tic-fallback-guid", nil },
+		func(id string) (bool, error) {
+			reserved = append(reserved, id)
+			return id != "tic-otter", nil
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "tic-bright-otter", got)
+	require.Equal(t, []int{1, 2}, calls)
+	require.Equal(t, []string{"tic-otter", "tic-bright-otter"}, reserved)
+}
+
+func TestGenerateUniqueIDFallsBackAfterThreeWordCollisions(t *testing.T) {
+	var calls []int
+	threeWordIDs := []string{"tic-quick-blue-owl", "tic-fast-blue-owl", "tic-calm-blue-owl"}
+	existing := map[string]struct{}{
+		"tic-owl":            {},
+		"tic-blue-owl":       {},
+		"tic-quick-blue-owl": {},
+		"tic-fast-blue-owl":  {},
+		"tic-calm-blue-owl":  {},
+	}
+	threeWordIndex := 0
+	guidCalled := false
+	got, err := generateUniqueID(existing,
+		func(words int) (string, error) {
+			calls = append(calls, words)
+			switch words {
+			case 1:
+				return "owl", nil
+			case 2:
+				return "blue-owl", nil
+			default:
+				name := strings.TrimPrefix(threeWordIDs[threeWordIndex], IDPrefix+"-")
+				threeWordIndex++
+				return name, nil
+			}
+		},
+		func() (string, error) {
+			guidCalled = true
+			return "tic-fallback-guid", nil
+		},
+	)
+	require.NoError(t, err)
+	require.True(t, guidCalled)
+	require.Equal(t, "tic-fallback-guid", got)
+	require.Equal(t, []int{1, 2, 3, 3, 3}, calls)
 }
 
 func (s *StoreSuite) TestWriteAndRead() {
@@ -80,6 +164,30 @@ func (s *StoreSuite) TestWriteAndRead() {
 	require.Equal(s.T(), ticket.Priority, read.Priority)
 	require.Equal(s.T(), ticket.Assignee, read.Assignee)
 	require.Equal(s.T(), ticket.Title, read.Title)
+}
+
+func (s *StoreSuite) TestCreateGeneratesAndStoresUniqueID() {
+	first := &Ticket{Status: StatusOpen, Title: "First", Created: time.Now().UTC()}
+	second := &Ticket{Status: StatusOpen, Title: "Second", Created: time.Now().UTC()}
+	require.NoError(s.T(), s.store.Create(first))
+	require.NoError(s.T(), s.store.Create(second))
+	require.NotEmpty(s.T(), first.ID)
+	require.NotEqual(s.T(), first.ID, second.ID)
+	require.True(s.T(), s.store.Exists(first.ID))
+	require.True(s.T(), s.store.Exists(second.ID))
+}
+
+func (s *StoreSuite) TestCreateDoesNotOverwriteExistingID() {
+	existing := &Ticket{ID: "tic-existing", Status: StatusOpen, Title: "Keep me", Created: time.Now().UTC()}
+	require.NoError(s.T(), s.store.Write(existing))
+
+	duplicate := &Ticket{ID: existing.ID, Status: StatusOpen, Title: "Overwrite", Created: time.Now().UTC()}
+	err := s.store.Create(duplicate)
+	require.ErrorIs(s.T(), err, os.ErrExist)
+
+	read, err := s.store.Read(existing.ID)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), "Keep me", read.Title)
 }
 
 func (s *StoreSuite) TestList() {

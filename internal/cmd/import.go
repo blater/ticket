@@ -85,15 +85,7 @@ Examples:
 		var importedTickets []*tk.Ticket
 		var skipped, generated int
 		for _, t := range tickets {
-			// Generate ID if not provided
-			if t.ID == "" {
-				newID, err := tk.GenerateID()
-				if err != nil {
-					return fmt.Errorf("failed to generate ID: %w", err)
-				}
-				t.ID = newID
-				generated++
-			}
+			generateID := t.ID == ""
 
 			// Check if ticket exists
 			if store.Exists(t.ID) {
@@ -110,8 +102,11 @@ Examples:
 				return fmt.Errorf("failed to convert ticket %s: %w", t.ID, err)
 			}
 
-			if err := store.Write(ticket); err != nil {
-				return fmt.Errorf("failed to write ticket %s: %w", t.ID, err)
+			if err := store.Create(ticket); err != nil {
+				return fmt.Errorf("failed to create ticket %s: %w", ticket.ID, err)
+			}
+			if generateID {
+				generated++
 			}
 			importedTickets = append(importedTickets, ticket)
 		}
