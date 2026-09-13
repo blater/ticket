@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/blater/goname"
 )
 
 // ErrAlreadyClaimed is returned when trying to claim a ticket that is not open.
@@ -18,11 +20,11 @@ const (
 	TicketsDirName = ".tickets"
 	// IDPrefix is the prefix for ticket IDs.
 	IDPrefix = "tic"
-	// IDRandomLength is the length of the random part of the ID.
-	IDRandomLength = 4
 	// TicketReadmeName is reserved for source-controlled store documentation.
 	TicketReadmeName = "README.md"
 )
+
+const maxThreeWordAttempts = 3
 
 // Store handles ticket file operations on a .tickets/ directory.
 type Store struct {
@@ -71,13 +73,164 @@ func (s *Store) TicketsDir() string {
 	return s.ticketsDir
 }
 
-// GenerateID generates a unique ticket ID.
+// GenerateID generates a one-word ticket ID candidate. Use Store.GenerateID
+// when the ID must be checked against tickets already in a store.
 func GenerateID() (string, error) {
-	bytes := make([]byte, IDRandomLength)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+	name, err := generateTicketName(1)
+	if err != nil {
+		return "", err
 	}
-	return fmt.Sprintf("%s-%s", IDPrefix, hex.EncodeToString(bytes)[:IDRandomLength]), nil
+	return ticketID(name), nil
+}
+
+// GenerateID generates a ticket ID that does not collide with an ID currently
+// in the store. It tries one word, then two words, then up to three different
+// three-word names before falling back to a GUID.
+func (s *Store) GenerateID() (string, error) {
+	ids, err := s.ListIDs()
+	if err != nil {
+		return "", err
+	}
+	existing := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		existing[id] = struct{}{}
+	}
+	return generateUniqueID(existing, generateTicketName, generateGUID)
+}
+
+func generateUniqueID(existing map[string]struct{}, generateName func(int) (string, error), generateGUID func() (string, error)) (string, error) {
+	return generateUniqueIDWithReservation(existing, generateName, generateGUID, nil)
+}
+
+func generateUniqueIDWithReservation(existing map[string]struct{}, generateName func(int) (string, error), generateGUID func() (string, error), reserve func(string) (bool, error)) (string, error) {
+	try := func(id string) (bool, error) {
+		if _, collision := existing[id]; collision {
+			return false, nil
+		}
+		if reserve == nil {
+			return true, nil
+		}
+		return reserve(id)
+	}
+
+	for _, words := range []int{1, 2} {
+		name, err := generateName(words)
+		if err != nil {
+			return "", err
+		}
+		id := ticketID(name)
+		if reserved, err := try(id); err != nil {
+			return "", err
+		} else if reserved {
+			return id, nil
+		}
+	}
+
+	for range maxThreeWordAttempts {
+		name, err := generateName(3)
+		if err != nil {
+			return "", err
+		}
+		id := ticketID(name)
+		if reserved, err := try(id); err != nil {
+			return "", err
+		} else if reserved {
+			return id, nil
+		}
+	}
+
+	id, err := generateGUID()
+	if err != nil {
+		return "", err
+	}
+	if reserved, err := try(id); err != nil {
+		return "", err
+	} else if !reserved {
+		return "", fmt.Errorf("generated GUID ticket ID already exists: %s", id)
+	}
+	return id, nil
+}
+
+func generateTicketName(words int) (string, error) {
+	options := goname.DefaultOptions()
+	options.Words = words
+	options.Strategy = goname.StrategyTolkien
+	name, err := goname.GenerateWithOptions(options)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate ticket name: %w", err)
+	}
+	return strings.ToLower(name), nil
+}
+
+func ticketID(name string) string {
+	return fmt.Sprintf("%s-%s", IDPrefix, name)
+}
+
+func generateGUID() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("failed to generate GUID: %w", err)
+	}
+	bytes[6] = (bytes[6] & 0x0f) | 0x40
+	bytes[8] = (bytes[8] & 0x3f) | 0x80
+	encoded := hex.EncodeToString(bytes)
+	guid := fmt.Sprintf("%s-%s-%s-%s-%s", encoded[:8], encoded[8:12], encoded[12:16], encoded[16:20], encoded[20:])
+	return ticketID(guid), nil
+}
+
+// Create writes a new ticket without overwriting an existing ticket file. If
+// ticket.ID is empty, it generates a unique name and advances through the
+// configured collision tiers until it can reserve the file.
+func (s *Store) Create(ticket *Ticket) error {
+	if err := s.EnsureDir(); err != nil {
+		return fmt.Errorf("failed to create tickets directory: %w", err)
+	}
+	if ticket.ID != "" {
+		return s.writeNew(ticket)
+	}
+
+	ids, err := s.ListIDs()
+	if err != nil {
+		return err
+	}
+	existing := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		existing[id] = struct{}{}
+	}
+	_, err = generateUniqueIDWithReservation(existing, generateTicketName, generateGUID, func(id string) (bool, error) {
+		ticket.ID = id
+		if err := s.writeNew(ticket); err != nil {
+			if errors.Is(err, os.ErrExist) {
+				existing[id] = struct{}{}
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	})
+	return err
+}
+
+func (s *Store) writeNew(ticket *Ticket) error {
+	data, err := ticket.Render()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(s.ticketsDir, ticket.ID+".md")
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create ticket file: %w", err)
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return fmt.Errorf("failed to write ticket file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("failed to close ticket file: %w", err)
+	}
+	return nil
 }
 
 // List returns all tickets in the storage directory.

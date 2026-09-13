@@ -13,19 +13,19 @@ A minimal CLI ticket management system designed for AI agents. This is a Go port
 
 ```bash
 $ tk create "Fix login bug" -t bug -p 1 --tags auth,urgent
-tic-a1b2
+tic-aragorn
 
 $ tk list
-tic-a1b2 [P1][open] - Fix login bug
+tic-aragorn [P1][open] - Fix login bug
 
-$ tk start a1b2
-Claimed tic-a1b2 -> in_progress
+$ tk start arag
+Claimed tic-aragorn -> in_progress
 
-$ tk add-note a1b2 "Root cause: session timeout"
-Added note to tic-a1b2
+$ tk add-note arag "Root cause: session timeout"
+Added note to tic-aragorn
 
-$ tk close a1b2
-Updated tic-a1b2 -> closed
+$ tk close arag
+Updated tic-aragorn -> closed
 ```
 
 ## Overview
@@ -360,8 +360,8 @@ tk bulk reopen --status=closed --tag=bug --dry-run
 Use any unique substring of a ticket ID:
 
 ```bash
-tk show 5c4       # matches tic-5c46
-tk start abc      # matches tic-abc1
+tk show arag      # matches tic-aragorn
+tk start gand     # matches tic-gandalf
 ```
 
 ### Directory Discovery
