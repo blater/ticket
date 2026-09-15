@@ -15,6 +15,7 @@ var createFlags struct {
 	description string
 	design      string
 	acceptance  string
+	strategy    string
 	ticketType  string
 	priority    int
 	assignee    string
@@ -27,10 +28,18 @@ var createFlags struct {
 
 var createCmd = &cobra.Command{
 	Use:   "create [title]",
-	Short: "Create a new ticket",
-	Long:  `Create a new ticket with the specified title and options.`,
-	Args:  cobra.MaximumNArgs(1),
+	Short: "Create a new ticket using the configured ID strategy",
+	Long: `Create a new ticket with the specified title and options.
+
+Ticket IDs use the hexadecimal strategy by default unless ticket.yaml sets a project
+strategy. Use --strategy to override it for this command.
+Valid strategies are default, tolkien, hex, base32, and ulid.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		strategy, err := resolveCreateStrategy(cmd)
+		if err != nil {
+			return err
+		}
 		if err := tk.ValidatePriority(createFlags.priority); err != nil {
 			return err
 		}
@@ -90,7 +99,7 @@ var createCmd = &cobra.Command{
 			return fmt.Errorf("delivery none is valid only for epics")
 		}
 
-		if err := store.Create(ticket); err != nil {
+		if err := store.CreateWithStrategy(ticket, strategy); err != nil {
 			return fmt.Errorf("failed to create ticket: %w", err)
 		}
 
@@ -101,6 +110,17 @@ var createCmd = &cobra.Command{
 		fmt.Println(ticket.ID)
 		return nil
 	},
+}
+
+func resolveCreateStrategy(cmd *cobra.Command) (tk.IDStrategy, error) {
+	strategy := string(tk.IDStrategyHex)
+	if cfg != nil && cfg.Strategy != "" {
+		strategy = cfg.Strategy
+	}
+	if cmd.Flags().Changed("strategy") {
+		strategy = createFlags.strategy
+	}
+	return tk.ParseIDStrategy(strategy)
 }
 
 // getGitUserName returns the git user.name config value, or empty string if unavailable.
@@ -115,6 +135,7 @@ func getGitUserName() string {
 
 func init() {
 	createCmd.Flags().StringVarP(&createFlags.description, "description", "d", "", "Description text")
+	createCmd.Flags().StringVarP(&createFlags.strategy, "strategy", "s", "", "ID strategy (default|tolkien|hex|base32|ulid; overrides ticket.yaml)")
 	createCmd.Flags().StringVar(&createFlags.design, "design", "", "Design notes")
 	createCmd.Flags().StringVar(&createFlags.acceptance, "acceptance", "", "Acceptance criteria")
 	createCmd.Flags().StringVarP(&createFlags.ticketType, "type", "t", "task", "Type (bug|feature|story|investigation|task|epic|chore)")

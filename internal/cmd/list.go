@@ -11,12 +11,14 @@ import (
 
 var listFlags tk.FilterOptions
 var sortFlags tk.SortOptions
+var listAll bool
 
 var listCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List tickets",
-	Long: `List all tickets with optional filters for status, assignee, type, and tags.
+	Long: `List open and in_progress tickets with optional filters for assignee, type, and tags.
+Use --all to include closed tickets, or --status to select a specific status.
 
 Sort options: priority (default), created, status, title`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -25,7 +27,15 @@ Sort options: priority (default), created, status, title`,
 			return err
 		}
 
-		filtered := tk.Filter(tickets, listFlags)
+		var filtered []*tk.Ticket
+		for _, t := range tickets {
+			if !listAll && listFlags.Status == "" && t.Status == tk.StatusClosed {
+				continue
+			}
+			if listFlags.Matches(t) {
+				filtered = append(filtered, t)
+			}
+		}
 		tk.Sort(filtered, sortFlags)
 
 		if jsonOutput {
@@ -158,6 +168,7 @@ Sort options: priority, created (default, descending), status, title`,
 }
 
 func init() {
+	listCmd.Flags().BoolVar(&listAll, "all", false, "Include closed tickets")
 	listCmd.Flags().StringVar(&listFlags.Status, "status", "", "Filter by status (open|in_progress|closed)")
 	listCmd.Flags().StringVarP(&listFlags.Assignee, "assignee", "a", "", "Filter by assignee")
 	listCmd.Flags().StringVarP(&listFlags.Tag, "tag", "T", "", "Filter by tag")

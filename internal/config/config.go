@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	tk "github.com/radutopala/ticket/pkg/ticket"
 )
 
 const (
@@ -23,11 +25,13 @@ const (
 type Config struct {
 	TicketsDir string
 	ConfigPath string
+	Strategy   string
 	Delivery   DeliveryPolicy
 }
 
 type projectConfig struct {
 	TicketsDirectory string         `yaml:"tickets-directory"`
+	Strategy         string         `yaml:"strategy,omitempty"`
 	Delivery         DeliveryPolicy `yaml:"delivery,omitempty"`
 }
 
@@ -60,7 +64,7 @@ func Load() (*Config, error) {
 			return nil, err
 		}
 	} else {
-		config = &Config{Delivery: defaultDeliveryPolicy()}
+		config = &Config{Strategy: string(tk.IDStrategyHex), Delivery: defaultDeliveryPolicy()}
 	}
 
 	if ticketsDir != "" {
@@ -102,6 +106,14 @@ func loadProjectConfig(configPath string) (*Config, error) {
 	if ticketsDir == "" {
 		return nil, fmt.Errorf("project config %s requires tickets-directory", configPath)
 	}
+	strategy := strings.TrimSpace(project.Strategy)
+	if strategy == "" {
+		strategy = string(tk.IDStrategyHex)
+	}
+	parsedStrategy, err := tk.ParseIDStrategy(strategy)
+	if err != nil {
+		return nil, fmt.Errorf("project config %s: %w", configPath, err)
+	}
 	if !filepath.IsAbs(ticketsDir) {
 		ticketsDir = filepath.Join(filepath.Dir(configPath), ticketsDir)
 	}
@@ -118,6 +130,7 @@ func loadProjectConfig(configPath string) (*Config, error) {
 	return &Config{
 		TicketsDir: filepath.Clean(ticketsDir),
 		ConfigPath: configPath,
+		Strategy:   string(parsedStrategy),
 		Delivery:   delivery,
 	}, nil
 }
