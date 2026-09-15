@@ -55,7 +55,7 @@ Sort options: priority (default), created, status, title`,
 
 var readyCmd = &cobra.Command{
 	Use:   "ready",
-	Short: "List open/in_progress tickets with resolved deps",
+	Short: "List non-closed tickets with resolved deps",
 	Long: `List open or in_progress tickets that have no unresolved dependencies.
 
 Sort options: priority (default), created, status, title`,
@@ -85,7 +85,7 @@ Sort options: priority (default), created, status, title`,
 
 var blockedCmd = &cobra.Command{
 	Use:   "blocked",
-	Short: "List open/in_progress tickets with unresolved deps",
+	Short: "List non-closed tickets with unresolved deps",
 	Long: `List open or in_progress tickets that have unresolved dependencies.
 
 Sort options: priority (default), created, status, title`,
@@ -169,7 +169,7 @@ Sort options: priority, created (default, descending), status, title`,
 
 func init() {
 	listCmd.Flags().BoolVar(&listAll, "all", false, "Include closed tickets")
-	listCmd.Flags().StringVar(&listFlags.Status, "status", "", "Filter by status (open|in_progress|closed)")
+	listCmd.Flags().StringVar(&listFlags.Status, "status", "", "Filter by status (defaults: open|in_progress|closed; configurable in ticket.yaml)")
 	listCmd.Flags().StringVarP(&listFlags.Assignee, "assignee", "a", "", "Filter by assignee")
 	listCmd.Flags().StringVarP(&listFlags.Tag, "tag", "T", "", "Filter by tag")
 	listCmd.Flags().StringVarP(&listFlags.Type, "type", "t", "", "Filter by type (task|bug|feature|story|investigation|epic|chore)")

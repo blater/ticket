@@ -134,7 +134,7 @@ func validateTickets(tickets []*tk.Ticket) []validationIssue {
 		if ticket.ID == "" {
 			issues = append(issues, validationIssue{Code: "missing-id", Message: "ticket has no id"})
 		}
-		if !ticket.Status.IsValid() {
+		if !cfg.StatusEnabled(ticket.Status) {
 			issues = append(issues, issue(ticket, "invalid-status", fmt.Sprintf("invalid status %q", ticket.Status)))
 		}
 		if !ticket.Type.IsValid() {

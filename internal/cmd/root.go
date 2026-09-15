@@ -56,6 +56,7 @@ Usage:
 
 Available Commands:
   create [title]           Create a new ticket
+    --status               Initial status [default: open]
     -d, --description      Description text
     -s, --strategy         ID strategy (default|tolkien|hex|base32|ulid)
     --design               Design notes
@@ -75,21 +76,21 @@ Available Commands:
   start <id>               Set ticket status to in_progress
   close <id>               Verify delivery metadata and close a ticket
   reopen <id>              Set ticket status to open
-  status <id> <status>     Update ticket status (open|in_progress|closed)
+  status <id> <status>     Update ticket status (defaults: open|in_progress|closed; configurable in ticket.yaml)
   list                     List tickets (alias: ls)
-    --status               Filter by status (open|in_progress|closed)
+    --status               Filter by status (defaults: open|in_progress|closed; configurable in ticket.yaml)
     -t, --type             Filter by type (task|bug|feature|story|investigation|epic|chore)
     -a, --assignee         Filter by assignee
     -T, --tag              Filter by tag
     -s, --sort             Sort by field (priority|created|status|title)
     -r, --reverse          Reverse sort order
-  ready                    List open/in_progress tickets with resolved deps
+  ready                    List non-closed tickets with resolved deps
     -t, --type             Filter by type (task|bug|feature|story|investigation|epic|chore)
     -a, --assignee         Filter by assignee
     -T, --tag              Filter by tag
     -s, --sort             Sort by field (priority|created|status|title)
     -r, --reverse          Reverse sort order
-  blocked                  List open/in_progress tickets with unresolved deps
+  blocked                  List non-closed tickets with unresolved deps
     -t, --type             Filter by type (task|bug|feature|story|investigation|epic|chore)
     -a, --assignee         Filter by assignee
     -T, --tag              Filter by tag
@@ -114,7 +115,7 @@ Available Commands:
   query [jq-filter]        Output tickets as JSON, optionally filtered with jq
   search <query>           Search tickets by text
     --case-sensitive       Perform case-sensitive search
-    --status               Filter by status (open|in_progress|closed)
+    --status               Filter by status (defaults: open|in_progress|closed; configurable in ticket.yaml)
   stats                    Display project metrics
     --json                 Output as JSON
   validate                 Validate ticket graph and Git delivery links

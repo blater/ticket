@@ -134,13 +134,13 @@ func readAllFromStdin() ([]byte, error) {
 
 func convertImportTicket(t importTicket) (*tk.Ticket, error) {
 	// Parse status
-	status := tk.StatusOpen
-	if t.Status != "" {
-		parsed, err := tk.ParseStatus(t.Status)
-		if err != nil {
-			return nil, fmt.Errorf("invalid status: %w", err)
-		}
-		status = parsed
+	statusValue := t.Status
+	if statusValue == "" {
+		statusValue = string(tk.StatusOpen)
+	}
+	status, err := cfg.ParseStatus(statusValue)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse type

@@ -16,6 +16,9 @@ var startCmd = &cobra.Command{
 	Long:  `Set the ticket status to in_progress. Supports partial ID matching. Uses file locking to prevent race conditions.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if _, err := cfg.ParseStatus(string(tk.StatusInProgress)); err != nil {
+			return err
+		}
 		id, err := store.ResolveID(args[0])
 		if err != nil {
 			return err

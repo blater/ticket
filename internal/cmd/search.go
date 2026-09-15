@@ -58,5 +58,5 @@ Examples:
 
 func init() {
 	searchCmd.Flags().BoolVar(&searchFlags.caseSensitive, "case-sensitive", false, "Perform case-sensitive search")
-	searchCmd.Flags().StringVar(&searchFlags.status, "status", "", "Filter by status (open|in_progress|closed)")
+	searchCmd.Flags().StringVar(&searchFlags.status, "status", "", "Filter by status (defaults: open|in_progress|closed; configurable in ticket.yaml)")
 }

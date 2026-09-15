@@ -23,6 +23,9 @@ commit links, code and documentation tickets require a delivered commit with
 an exact Ticket trailer. Evidence tickets require a commit or evidence link.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if _, err := cfg.ParseStatus(string(tk.StatusClosed)); err != nil {
+			return err
+		}
 		ticket, err := resolveAndReadTicket(args[0])
 		if err != nil {
 			return err
