@@ -39,6 +39,7 @@ func (s *CmdSuite) SetupTest() {
 
 	// Reset all command flags to their default values
 	jsonOutput = false
+	listAll = false
 	listFlags.Status = ""
 	listFlags.Assignee = ""
 	listFlags.Tag = ""
@@ -46,6 +47,12 @@ func (s *CmdSuite) SetupTest() {
 	createFlags.description = ""
 	createFlags.design = ""
 	createFlags.acceptance = ""
+	createFlags.strategy = ""
+	createCmd.Flags().Lookup("strategy").Changed = false
+	if helpFlag := createCmd.Flags().Lookup("help"); helpFlag != nil {
+		_ = helpFlag.Value.Set("false")
+		helpFlag.Changed = false
+	}
 	createFlags.ticketType = ""
 	createFlags.priority = 2
 	createFlags.assignee = ""
@@ -179,7 +186,7 @@ func (s *CmdSuite) TestListCommand() {
 	require.NoError(s.T(), err)
 	require.Contains(s.T(), output, "tic-list1")
 	require.Contains(s.T(), output, "tic-list2")
-	require.Contains(s.T(), output, "tic-list3")
+	require.NotContains(s.T(), output, "tic-list3")
 }
 
 func (s *CmdSuite) TestListCommandWithStatusFilter() {
@@ -288,6 +295,7 @@ func (s *CmdSuite) TestAmbiguousIDResolution() {
 func (s *CmdSuite) TestCreateFlagsInit() {
 	// Test that create flags are initialized
 	require.NotNil(s.T(), createCmd.Flags().Lookup("description"))
+	require.NotNil(s.T(), createCmd.Flags().Lookup("strategy"))
 	require.NotNil(s.T(), createCmd.Flags().Lookup("type"))
 	require.NotNil(s.T(), createCmd.Flags().Lookup("delivery"))
 	require.NotNil(s.T(), createCmd.Flags().Lookup("priority"))
@@ -588,11 +596,59 @@ func (s *CmdSuite) TestCreateCommandWithFlags() {
 	require.Equal(s.T(), "developer", ticket.Assignee)
 }
 
+func (s *CmdSuite) TestCreateStrategyUsesConfigAndCommandLineOverride() {
+	projectDir := filepath.Join(s.tempDir, "project")
+	require.NoError(s.T(), os.MkdirAll(projectDir, 0755))
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(projectDir, "ticket.yaml"),
+		[]byte("tickets-directory: docs/tickets\nstrategy: tolkien\n"),
+		0644,
+	))
+	originalDir, err := os.Getwd()
+	require.NoError(s.T(), err)
+	require.NoError(s.T(), os.Chdir(projectDir))
+	defer func() { require.NoError(s.T(), os.Chdir(originalDir)) }()
+
+	tolkienOutput, err := s.executeCommand("create", "Config strategy")
+	require.NoError(s.T(), err)
+	tolkienID := strings.TrimSpace(tolkienOutput)
+	require.True(s.T(), strings.HasPrefix(tolkienID, "tic-"))
+	require.NotRegexp(s.T(), `^tic-[0-9a-f]{32}$`, tolkienID)
+
+	hexOutput, err := s.executeCommand("create", "Hex override", "--strategy", "hex")
+	require.NoError(s.T(), err)
+	require.Regexp(s.T(), `^tic-[0-9a-f]{32}$`, strings.TrimSpace(hexOutput))
+
+	base32Output, err := s.executeCommand("create", "Base32 override", "--strategy", "base32")
+	require.NoError(s.T(), err)
+	require.Regexp(s.T(), `^tic-[0-9a-hjkmnp-tv-z]{26}$`, strings.TrimSpace(base32Output))
+
+	ulidOutput, err := s.executeCommand("create", "ULID override", "--strategy", "ulid")
+	require.NoError(s.T(), err)
+	require.Regexp(s.T(), `^tic-[0-9a-hjkmnp-tv-z]{26}$`, strings.TrimSpace(ulidOutput))
+
+	shortFlagOutput, err := s.executeCommand("create", "Short flag", "-s", "tolkien")
+	require.NoError(s.T(), err)
+	require.NotRegexp(s.T(), `^tic-[0-9a-f]{32}$`, strings.TrimSpace(shortFlagOutput))
+
+	defaultOutput, err := s.executeCommand("create", "Default alias", "--strategy", "default")
+	require.NoError(s.T(), err)
+	require.Regexp(s.T(), `^tic-[a-z]+$`, strings.TrimSpace(defaultOutput))
+}
+
 func (s *CmdSuite) TestCreateCommandWithInvalidType() {
 	_, err := s.executeCommand("create", "Bad Type Ticket", "--type", "invalid")
 
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "invalid type")
+}
+
+func (s *CmdSuite) TestCreateCommandWithInvalidStrategy() {
+	_, err := s.executeCommand("create", "Invalid Strategy", "--strategy", "random")
+	require.ErrorContains(s.T(), err, "valid values: default|tolkien|hex|base32|ulid")
+
+	_, err = s.executeCommand("create", "Removed GUID strategy", "--strategy", "guid")
+	require.ErrorContains(s.T(), err, "valid values: default|tolkien|hex|base32|ulid")
 }
 
 func (s *CmdSuite) TestDepAddCommand() {
@@ -725,12 +781,19 @@ func (s *CmdSuite) TestHelpOutput() {
 
 	// Verify create command has its flags documented
 	require.Contains(s.T(), output, "--description")
+	require.Contains(s.T(), output, "-s, --strategy")
 	require.Contains(s.T(), output, "--type")
 	require.Contains(s.T(), output, "--priority")
 
 	// Verify footer about .tickets/
 	require.Contains(s.T(), output, "Tickets are stored in the directory selected by ticket.yaml")
 	require.Contains(s.T(), output, "Supports partial ID matching")
+}
+
+func (s *CmdSuite) TestCreateLongHelpDocumentsStrategy() {
+	output, err := s.executeCommand("create", "--help")
+	require.NoError(s.T(), err)
+	require.Contains(s.T(), output, "ID strategy (default|tolkien|hex|base32|ulid")
 }
 
 func (s *CmdSuite) TestGetGitUserName() {

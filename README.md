@@ -12,7 +12,7 @@ A minimal CLI ticket management system designed for AI agents. This is a Go port
 > Play the full demo: `asciinema play https://raw.githubusercontent.com/radutopala/ticket/main/demo.cast`
 
 ```bash
-$ tk create "Fix login bug" -t bug -p 1 --tags auth,urgent
+$ tk create "Fix login bug" -t bug -p 1 --tags auth,urgent -s tolkien
 tic-aragorn
 
 $ tk list
@@ -35,6 +35,7 @@ Updated tic-aragorn -> closed
 - **Dependency tracking** with cycle detection
 - **Atomic claims** to prevent race conditions
 - **Partial ID matching** for quick access
+- **Goname ticket IDs** with word, Tolkien, hex, Base32, and ULID strategies
 - **Git-native version control** for all ticket data
 
 ## Installation
@@ -154,6 +155,7 @@ Then use `/tk` to get a comprehensive command reference and workflow guide.
 
 ```bash
 tk create "My ticket title" \
+  -s tolkien \
   -d "Description text" \
   --design "Design notes" \
   --acceptance "Acceptance criteria" \
@@ -167,18 +169,22 @@ tk create "My ticket title" \
   --tags backend,urgent  # Comma-separated tags
 ```
 
+`-s` / `--strategy` accepts `default`, `tolkien`, `hex`, `base32`, or `ulid`.
+It overrides the project setting in `ticket.yaml` for this command. With no
+project setting, ticket creation uses `hex`.
+
 When commit-link policy is enabled, close a code or documentation delivery with
 the commit carrying its exact ticket trailer:
 
 ```text
-Ticket: tic-a1b2
+Ticket: tic-0123456789abcdef0123456789abcdef
 ```
 
 ```bash
-tk close tic-a1b2 --commit HEAD \
-  --checkpoint-tag perf-checkpoint-a1b2 \
+tk close tic-0123456789abcdef0123456789abcdef --commit HEAD \
+  --checkpoint-tag perf-checkpoint-0123456789abcdef \
   --evidence docs/performance-checkpoints.md
-tk validate --commits origin/main..HEAD --ticket tic-a1b2
+tk validate --commits origin/main..HEAD --ticket tic-0123456789abcdef0123456789abcdef
 ```
 
 ### Dependency Management
@@ -203,13 +209,14 @@ tk validate --commits origin/main..HEAD --ticket tic-a1b2
 
 | Command | Description |
 |---------|-------------|
-| `list` / `ls` | List all tickets |
+| `list` / `ls` | List open and in_progress tickets |
 | `ready` | Open/in_progress tickets with resolved deps |
 | `blocked` | Open/in_progress tickets with unresolved deps |
 | `closed` | Recently closed tickets |
 
 All list commands support filters:
-- `--status <status>` - Filter by status
+- `--status <status>` - Select a specific status, overriding the default (list/ls only)
+- `--all` - Include closed tickets (list/ls only; other filters still apply)
 - `-a, --assignee <name>` - Filter by assignee
 - `-T, --tag <tag>` - Filter by tag
 - `-s, --sort <field>` - Sort by field (priority\|created\|status\|title)
@@ -268,16 +275,16 @@ Tickets are stored as markdown files with YAML frontmatter:
 
 ```markdown
 ---
-id: tic-a1b2
+id: tic-0123456789abcdef0123456789abcdef
 status: open
 type: task
 priority: 2
 assignee: John Doe
 delivery: code
 base-commit: 0123456789abcdef
-branch: ticket/tic-a1b2-description
+branch: ticket/tic-0123456789abcdef0123456789abcdef-description
 delivered-commit: fedcba9876543210
-checkpoint-tag: perf-checkpoint-a1b2
+checkpoint-tag: perf-checkpoint-0123456789abcdef
 evidence:
   - docs/performance-checkpoints.md
 tags:
@@ -378,6 +385,32 @@ delivery:
   branch-prefix: ticket/
 ```
 
+The optional top-level `strategy` setting selects how new ticket IDs are
+generated. Every strategy uses Goname's `tic` prefix, so IDs begin with
+`tic-`. When the setting is omitted, `tk` uses `hex`, producing 32 lowercase
+hexadecimal characters after the prefix. The supported strategies are:
+
+| Strategy | Generated suffix |
+|----------|-------------------|
+| `default` | One word from Goname's standard word lists |
+| `tolkien` | Tolkien-themed word name |
+| `hex` | 32 lowercase hexadecimal characters |
+| `base32` | 26 lowercase Crockford Base32 characters |
+| `ulid` | 26-character ULID |
+
+The word-based strategies can use longer names if a generated ID collides with
+an existing ticket. `guid` is no longer an accepted strategy; use `hex`
+instead. Existing ticket IDs remain unchanged and readable. For example:
+
+```yaml
+tickets-directory: docs/tickets
+strategy: tolkien
+```
+
+`tk create -s <strategy>` or `tk create --strategy <strategy>` overrides the
+project setting for one ticket. An explicit `default` selects Goname's standard
+word-list strategy; the app's fallback when no strategy is configured is `hex`.
+
 `tk` searches the current directory and its parents for `ticket.yaml` and
 resolves a relative ticket directory against the directory containing that
 file. If no project configuration exists, it searches the same path for the
@@ -464,23 +497,36 @@ tk.Sort(filtered, tk.SortOptions{SortBy: "priority"})
 
 // Create and write a ticket
 ticket := &tk.Ticket{
-    ID:     "tic-abc1",
     Title:  "Fix bug",
     Status: tk.StatusOpen,
     Type:   tk.TypeBug,
 }
-store.Write(ticket)
+// Create assigns a unique hex ID by default.
+if err := store.Create(ticket); err != nil {
+    panic(err)
+}
+
+// Select another Goname strategy when creating a ticket.
+ulidTicket := &tk.Ticket{Title: "Another bug", Status: tk.StatusOpen, Type: tk.TypeBug}
+if err := store.CreateWithStrategy(ulidTicket, tk.IDStrategyULID); err != nil {
+    panic(err)
+}
 
 // Update individual fields after creation
-store.SetExternalRef("tic-abc1", "JIRA-456")
-store.SetExternalRef("tic-abc1", "") // pass empty to clear
-store.SetPR("tic-abc1", "gh-pr-42")
-store.SetPR("tic-abc1", "")          // pass empty to clear
+store.SetExternalRef(ticket.ID, "JIRA-456")
+store.SetExternalRef(ticket.ID, "") // pass empty to clear
+store.SetPR(ticket.ID, "gh-pr-42")
+store.SetPR(ticket.ID, "")          // pass empty to clear
 
 // Dependency management
 tk.AddDep(ticket, "tic-dep1", allTickets) // cycle-safe
 cycles := tk.DetectCycles(allTickets)
 ```
+
+`tk.GenerateIDWithStrategy` creates a candidate without checking a store;
+`store.GenerateIDWithStrategy` avoids IDs already present in that store.
+`CreateWithStrategy` is the direct create path when you want a selected
+strategy and safe file reservation.
 
 ## Project Structure
 

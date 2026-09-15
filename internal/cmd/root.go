@@ -57,6 +57,7 @@ Usage:
 Available Commands:
   create [title]           Create a new ticket
     -d, --description      Description text
+    -s, --strategy         ID strategy (default|tolkien|hex|base32|ulid)
     --design               Design notes
     --acceptance           Acceptance criteria
     -t, --type             Type (bug|feature|story|investigation|task|epic|chore) [default: task]
@@ -134,6 +135,10 @@ Global Flags:
   --json                 Output as JSON (works with all commands)
 
 Use "tk [command] --help" for more information about a command.
+
+Ticket ID strategy defaults to hex, can be set in ticket.yaml, and can be
+overridden for one ticket with tk create --strategy. "default" selects Goname's
+default word-list strategy.
 
 Tickets are stored in the directory selected by ticket.yaml, TICKETS_DIR,
 or the .tickets/ fallback.

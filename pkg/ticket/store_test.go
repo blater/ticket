@@ -44,8 +44,47 @@ func (s *StoreSuite) TestOpen() {
 func (s *StoreSuite) TestGenerateID() {
 	id, err := GenerateID()
 	require.NoError(s.T(), err)
+	require.Regexp(s.T(), `^tic-[0-9a-f]{32}$`, id)
+}
+
+func (s *StoreSuite) TestGenerateIDWithTolkienStrategy() {
+	id, err := GenerateIDWithStrategy(IDStrategyTolkien)
+	require.NoError(s.T(), err)
 	require.True(s.T(), strings.HasPrefix(id, IDPrefix+"-"))
-	require.Len(s.T(), strings.Split(strings.TrimPrefix(id, IDPrefix+"-"), "-"), 1)
+	require.NotRegexp(s.T(), `^tic-[0-9a-f]{32}$`, id)
+}
+
+func (s *StoreSuite) TestGenerateIDWithGonameStrategies() {
+	tests := []struct {
+		strategy IDStrategy
+		pattern  string
+	}{
+		{IDStrategyDefault, `^tic-[a-z]+$`},
+		{IDStrategyTolkien, `^tic-[a-z]+$`},
+		{IDStrategyHex, `^tic-[0-9a-f]{32}$`},
+		{IDStrategyBase32, `^tic-[0-9a-hjkmnp-tv-z]{26}$`},
+		{IDStrategyULID, `^tic-[0-9a-hjkmnp-tv-z]{26}$`},
+	}
+	for _, test := range tests {
+		s.Run(string(test.strategy), func() {
+			id, err := GenerateIDWithStrategy(test.strategy)
+			require.NoError(s.T(), err)
+			require.Regexp(s.T(), test.pattern, id)
+		})
+	}
+}
+
+func (s *StoreSuite) TestGenerateIDDefaultStrategyUsesGonameWords() {
+	id, err := GenerateIDWithStrategy(IDStrategyDefault)
+	require.NoError(s.T(), err)
+	require.Regexp(s.T(), `^tic-[a-z]+$`, id)
+}
+
+func (s *StoreSuite) TestGenerateIDRejectsUnknownStrategy() {
+	_, err := GenerateIDWithStrategy(IDStrategy("random"))
+	require.ErrorContains(s.T(), err, "valid values: default|tolkien|hex|base32|ulid")
+	_, err = GenerateIDWithStrategy(IDStrategy("guid"))
+	require.ErrorContains(s.T(), err, "valid values: default|tolkien|hex|base32|ulid")
 }
 
 func (s *StoreSuite) TestGenerateIDUnique() {
@@ -67,14 +106,14 @@ func TestGenerateUniqueIDEscalatesWordCount(t *testing.T) {
 			calls = append(calls, words)
 			switch words {
 			case 1:
-				return "otter", nil
+				return "tic-otter", nil
 			case 2:
-				return "bright-otter", nil
+				return "tic-bright-otter", nil
 			default:
-				return "calm-bright-otter", nil
+				return "tic-calm-bright-otter", nil
 			}
 		},
-		func() (string, error) { return "tic-fallback-guid", nil },
+		func() (string, error) { return "tic-fallback-hex", nil },
 	)
 	require.NoError(t, err)
 	require.Equal(t, "tic-calm-bright-otter", got)
@@ -88,11 +127,11 @@ func TestGenerateUniqueIDAdvancesWhenReservationCollides(t *testing.T) {
 		func(words int) (string, error) {
 			calls = append(calls, words)
 			if words == 1 {
-				return "otter", nil
+				return "tic-otter", nil
 			}
-			return "bright-otter", nil
+			return "tic-bright-otter", nil
 		},
-		func() (string, error) { return "tic-fallback-guid", nil },
+		func() (string, error) { return "tic-fallback-hex", nil },
 		func(id string) (bool, error) {
 			reserved = append(reserved, id)
 			return id != "tic-otter", nil
@@ -115,29 +154,29 @@ func TestGenerateUniqueIDFallsBackAfterThreeWordCollisions(t *testing.T) {
 		"tic-calm-blue-owl":  {},
 	}
 	threeWordIndex := 0
-	guidCalled := false
+	fallbackCalled := false
 	got, err := generateUniqueID(existing,
 		func(words int) (string, error) {
 			calls = append(calls, words)
 			switch words {
 			case 1:
-				return "owl", nil
+				return "tic-owl", nil
 			case 2:
-				return "blue-owl", nil
+				return "tic-blue-owl", nil
 			default:
-				name := strings.TrimPrefix(threeWordIDs[threeWordIndex], IDPrefix+"-")
+				name := threeWordIDs[threeWordIndex]
 				threeWordIndex++
 				return name, nil
 			}
 		},
 		func() (string, error) {
-			guidCalled = true
-			return "tic-fallback-guid", nil
+			fallbackCalled = true
+			return "tic-fallback-hex", nil
 		},
 	)
 	require.NoError(t, err)
-	require.True(t, guidCalled)
-	require.Equal(t, "tic-fallback-guid", got)
+	require.True(t, fallbackCalled)
+	require.Equal(t, "tic-fallback-hex", got)
 	require.Equal(t, []int{1, 2, 3, 3, 3}, calls)
 }
 
@@ -175,6 +214,30 @@ func (s *StoreSuite) TestCreateGeneratesAndStoresUniqueID() {
 	require.NotEqual(s.T(), first.ID, second.ID)
 	require.True(s.T(), s.store.Exists(first.ID))
 	require.True(s.T(), s.store.Exists(second.ID))
+	require.Regexp(s.T(), `^tic-[0-9a-f]{32}$`, first.ID)
+}
+
+func (s *StoreSuite) TestCreateWithTolkienStrategy() {
+	ticket := &Ticket{Status: StatusOpen, Title: "Tolkien", Created: time.Now().UTC()}
+	require.NoError(s.T(), s.store.CreateWithStrategy(ticket, IDStrategyTolkien))
+	require.True(s.T(), strings.HasPrefix(ticket.ID, IDPrefix+"-"))
+	require.NotRegexp(s.T(), `^tic-[0-9a-f]{32}$`, ticket.ID)
+}
+
+func (s *StoreSuite) TestCreateWithBase32AndULIDStrategies() {
+	for _, test := range []struct {
+		strategy IDStrategy
+		pattern  string
+	}{
+		{IDStrategyBase32, `^tic-[0-9a-hjkmnp-tv-z]{26}$`},
+		{IDStrategyULID, `^tic-[0-9a-hjkmnp-tv-z]{26}$`},
+	} {
+		s.Run(string(test.strategy), func() {
+			ticket := &Ticket{Status: StatusOpen, Title: string(test.strategy), Created: time.Now().UTC()}
+			require.NoError(s.T(), s.store.CreateWithStrategy(ticket, test.strategy))
+			require.Regexp(s.T(), test.pattern, ticket.ID)
+		})
+	}
 }
 
 func (s *StoreSuite) TestCreateDoesNotOverwriteExistingID() {

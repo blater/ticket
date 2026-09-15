@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -9,6 +10,58 @@ import (
 
 	tk "github.com/radutopala/ticket/pkg/ticket"
 )
+
+func (s *CmdSuite) TestListStatusDefaults() {
+	s.createTestTicket("tic-open", tk.StatusOpen, "Open ticket")
+	s.createTestTicket("tic-active", tk.StatusInProgress, "Active ticket")
+	s.createTestTicket("tic-closed", tk.StatusClosed, "Closed ticket")
+	for _, id := range []string{"tic-open", "tic-closed"} {
+		ticket, err := store.Read(id)
+		require.NoError(s.T(), err)
+		ticket.Assignee = "alice"
+		ticket.Tags = []string{"backend"}
+		ticket.Type = tk.TypeBug
+		require.NoError(s.T(), store.Write(ticket))
+	}
+
+	originalFilter, originalSort, originalAll := listFlags, sortFlags, listAll
+	s.T().Cleanup(func() {
+		listFlags, sortFlags, listAll = originalFilter, originalSort, originalAll
+	})
+	for _, command := range []string{"list", "ls"} {
+		for _, tc := range []struct {
+			name string
+			args []string
+			want []string
+		}{
+			{"default", nil, []string{"tic-active", "tic-open"}},
+			{"all", []string{"--all"}, []string{"tic-active", "tic-closed", "tic-open"}},
+			{"open", []string{"--status", "open"}, []string{"tic-open"}},
+			{"in_progress", []string{"--status", "in_progress"}, []string{"tic-active"}},
+			{"closed", []string{"--status", "closed"}, []string{"tic-closed"}},
+			{"all with status", []string{"--all", "--status", "closed"}, []string{"tic-closed"}},
+			{"assignee", []string{"--assignee", "alice"}, []string{"tic-open"}},
+			{"tag", []string{"--tag", "backend"}, []string{"tic-open"}},
+			{"type", []string{"--type", "bug"}, []string{"tic-open"}},
+			{"all with filter", []string{"--all", "--assignee", "alice"}, []string{"tic-closed", "tic-open"}},
+			{"no matches", []string{"--assignee", "nobody"}, nil},
+		} {
+			s.Run(command+"/"+tc.name, func() {
+				listFlags, sortFlags, listAll = tk.FilterOptions{}, tk.SortOptions{}, false
+				args := append([]string{command, "--json"}, tc.args...)
+				output, err := s.executeCommand(args...)
+				require.NoError(s.T(), err)
+				var tickets []*tk.Ticket
+				require.NoError(s.T(), json.Unmarshal([]byte(output), &tickets))
+				var ids []string
+				for _, ticket := range tickets {
+					ids = append(ids, ticket.ID)
+				}
+				require.Equal(s.T(), tc.want, ids)
+			})
+		}
+	}
+}
 
 type ListSuite struct {
 	suite.Suite

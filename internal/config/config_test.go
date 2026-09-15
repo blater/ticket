@@ -25,6 +25,7 @@ func (s *ConfigSuite) TestLoadWithEnvVar() {
 
 	require.NoError(s.T(), err)
 	require.NotNil(s.T(), cfg)
+	require.Equal(s.T(), "hex", cfg.Strategy)
 	require.Equal(s.T(), customDir, cfg.TicketsDir)
 }
 
@@ -37,6 +38,7 @@ func (s *ConfigSuite) TestLoadWithDefaultDir() {
 
 	require.NoError(s.T(), err)
 	require.NotNil(s.T(), cfg)
+	require.Equal(s.T(), "hex", cfg.Strategy)
 
 	workingDir, err := os.Getwd()
 	require.NoError(s.T(), err)
@@ -63,6 +65,7 @@ func (s *ConfigSuite) TestLoadWithProjectConfigFromNestedDirectory() {
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), filepath.Join(resolvedProjectDir, "docs", "tickets"), cfg.TicketsDir)
 	require.Equal(s.T(), filepath.Join(resolvedProjectDir, ProjectConfigName), cfg.ConfigPath)
+	require.Equal(s.T(), "hex", cfg.Strategy)
 }
 
 func (s *ConfigSuite) TestEnvironmentOverridesProjectConfig() {
@@ -89,7 +92,7 @@ func (s *ConfigSuite) TestProjectConfigLoadsDeliveryPolicy() {
 	projectDir := s.T().TempDir()
 	require.NoError(s.T(), os.WriteFile(
 		filepath.Join(projectDir, ProjectConfigName),
-		[]byte("tickets-directory: docs/tickets\ndelivery:\n  require-commit-links: true\n  commit-trailer: Work-Item\n  require-ticket-branch: true\n  branch-prefix: ticket/\n"),
+		[]byte("tickets-directory: docs/tickets\nstrategy: tolkien\ndelivery:\n  require-commit-links: true\n  commit-trailer: Work-Item\n  require-ticket-branch: true\n  branch-prefix: ticket/\n"),
 		0644,
 	))
 	s.changeWorkingDirectory(projectDir)
@@ -97,10 +100,42 @@ func (s *ConfigSuite) TestProjectConfigLoadsDeliveryPolicy() {
 	cfg, err := Load()
 
 	require.NoError(s.T(), err)
+	require.Equal(s.T(), "tolkien", cfg.Strategy)
 	require.True(s.T(), cfg.Delivery.RequireCommitLinks)
 	require.Equal(s.T(), "Work-Item", cfg.Delivery.CommitTrailer)
 	require.True(s.T(), cfg.Delivery.RequireTicketBranch)
 	require.Equal(s.T(), "ticket/", cfg.Delivery.BranchPrefix)
+}
+
+func (s *ConfigSuite) TestProjectConfigRejectsUnknownStrategy() {
+	s.T().Setenv(EnvTicketsDir, "")
+	projectDir := s.T().TempDir()
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(projectDir, ProjectConfigName),
+		[]byte("tickets-directory: docs/tickets\nstrategy: random\n"),
+		0644,
+	))
+	s.changeWorkingDirectory(projectDir)
+
+	_, err := Load()
+
+	require.ErrorContains(s.T(), err, "valid values: default|tolkien|hex|base32|ulid")
+}
+
+func (s *ConfigSuite) TestProjectConfigDefaultSelectsGonameDefaultStrategy() {
+	s.T().Setenv(EnvTicketsDir, "")
+	projectDir := s.T().TempDir()
+	require.NoError(s.T(), os.WriteFile(
+		filepath.Join(projectDir, ProjectConfigName),
+		[]byte("tickets-directory: docs/tickets\nstrategy: default\n"),
+		0644,
+	))
+	s.changeWorkingDirectory(projectDir)
+
+	cfg, err := Load()
+
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), "default", cfg.Strategy)
 }
 
 func (s *ConfigSuite) TestProjectConfigRequiresBranchPrefixWhenEnforced() {
