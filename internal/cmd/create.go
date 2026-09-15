@@ -12,6 +12,7 @@ import (
 )
 
 var createFlags struct {
+	status      string
 	description string
 	design      string
 	acceptance  string
@@ -36,6 +37,14 @@ strategy. Use --strategy to override it for this command.
 Valid strategies are default, tolkien, hex, base32, and ulid.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		statusValue := string(tk.StatusOpen)
+		if cmd.Flags().Changed("status") {
+			statusValue = createFlags.status
+		}
+		status, err := cfg.ParseStatus(statusValue)
+		if err != nil {
+			return fmt.Errorf("cannot create ticket: %w; select an enabled status with --status", err)
+		}
 		strategy, err := resolveCreateStrategy(cmd)
 		if err != nil {
 			return err
@@ -59,7 +68,7 @@ Valid strategies are default, tolkien, hex, base32, and ulid.`,
 		}
 
 		ticket := &tk.Ticket{
-			Status:      tk.StatusOpen,
+			Status:      status,
 			Priority:    createFlags.priority,
 			Assignee:    assignee,
 			ExternalRef: createFlags.externalRef,
@@ -99,6 +108,13 @@ Valid strategies are default, tolkien, hex, base32, and ulid.`,
 			return fmt.Errorf("delivery none is valid only for epics")
 		}
 
+		if status == tk.StatusClosed && cfg.Delivery.RequireCommitLinks {
+			return fmt.Errorf("delivery policy requires tk close with verified delivery metadata")
+		}
+		if status == tk.StatusInProgress && ticketRequiresBranch(ticket) {
+			return fmt.Errorf("branch policy requires tk start to capture and verify Git context")
+		}
+
 		if err := store.CreateWithStrategy(ticket, strategy); err != nil {
 			return fmt.Errorf("failed to create ticket: %w", err)
 		}
@@ -134,6 +150,7 @@ func getGitUserName() string {
 }
 
 func init() {
+	createCmd.Flags().StringVar(&createFlags.status, "status", "open", "Initial status (must be enabled in ticket.yaml)")
 	createCmd.Flags().StringVarP(&createFlags.description, "description", "d", "", "Description text")
 	createCmd.Flags().StringVarP(&createFlags.strategy, "strategy", "s", "", "ID strategy (default|tolkien|hex|base32|ulid; overrides ticket.yaml)")
 	createCmd.Flags().StringVar(&createFlags.design, "design", "", "Design notes")

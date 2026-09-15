@@ -58,6 +58,9 @@ var bulkStartCmd = &cobra.Command{
 }
 
 func runBulkAction(cmd *cobra.Command, newStatus tk.Status, actionVerb string) error {
+	if _, err := cfg.ParseStatus(string(newStatus)); err != nil {
+		return err
+	}
 	if cfg.Delivery.RequireCommitLinks && newStatus == tk.StatusClosed {
 		return fmt.Errorf("delivery policy requires closing tickets individually with verified delivery metadata")
 	}
@@ -130,7 +133,7 @@ func runBulkAction(cmd *cobra.Command, newStatus tk.Status, actionVerb string) e
 
 func init() {
 	bulkCmd.PersistentFlags().StringVarP(&bulkFlags.tag, "tag", "T", "", "Filter by tag")
-	bulkCmd.PersistentFlags().StringVar(&bulkFlags.status, "status", "", "Filter by status (open|in_progress|closed)")
+	bulkCmd.PersistentFlags().StringVar(&bulkFlags.status, "status", "", "Filter by status (defaults: open|in_progress|closed; configurable in ticket.yaml)")
 	bulkCmd.PersistentFlags().StringVarP(&bulkFlags.assignee, "assignee", "a", "", "Filter by assignee")
 	bulkCmd.PersistentFlags().BoolVar(&bulkFlags.dryRun, "dry-run", false, "Preview changes without applying them")
 

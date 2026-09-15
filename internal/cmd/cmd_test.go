@@ -44,6 +44,8 @@ func (s *CmdSuite) SetupTest() {
 	listFlags.Assignee = ""
 	listFlags.Tag = ""
 	closedFlags.limit = 20
+	createFlags.status = "open"
+	createCmd.Flags().Lookup("status").Changed = false
 	createFlags.description = ""
 	createFlags.design = ""
 	createFlags.acceptance = ""

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 
@@ -27,12 +29,14 @@ type Config struct {
 	ConfigPath string
 	Strategy   string
 	Delivery   DeliveryPolicy
+	Status     map[string]bool
 }
 
 type projectConfig struct {
-	TicketsDirectory string         `yaml:"tickets-directory"`
-	Strategy         string         `yaml:"strategy,omitempty"`
-	Delivery         DeliveryPolicy `yaml:"delivery,omitempty"`
+	Status           map[string]bool `yaml:"status,omitempty"`
+	TicketsDirectory string          `yaml:"tickets-directory"`
+	Strategy         string          `yaml:"strategy,omitempty"`
+	Delivery         DeliveryPolicy  `yaml:"delivery,omitempty"`
 }
 
 // DeliveryPolicy configures source-to-ticket closure checks.
@@ -102,6 +106,15 @@ func loadProjectConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse project config %s: %w", configPath, err)
 	}
 
+	for name := range project.Status {
+		if name == "" || strings.IndexFunc(name, unicode.IsSpace) >= 0 {
+			return nil, fmt.Errorf("project config %s: status names must be nonempty and contain no whitespace", configPath)
+		}
+	}
+	if len((&Config{Status: project.Status}).ValidStatuses()) == 0 {
+		return nil, fmt.Errorf("project config %s: at least one status must be enabled", configPath)
+	}
+
 	ticketsDir := strings.TrimSpace(project.TicketsDirectory)
 	if ticketsDir == "" {
 		return nil, fmt.Errorf("project config %s requires tickets-directory", configPath)
@@ -130,6 +143,7 @@ func loadProjectConfig(configPath string) (*Config, error) {
 	return &Config{
 		TicketsDir: filepath.Clean(ticketsDir),
 		ConfigPath: configPath,
+		Status:     project.Status,
 		Strategy:   string(parsedStrategy),
 		Delivery:   delivery,
 	}, nil
@@ -183,4 +197,51 @@ func findDirectoryInParents(start, name string) (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// StatusEnabled reports whether a status is allowed by this project's overrides.
+// A nil configuration uses the built-in defaults.
+func (c *Config) StatusEnabled(status tk.Status) bool {
+	if c != nil {
+		if enabled, exists := c.Status[string(status)]; exists {
+			return enabled
+		}
+	}
+	return status.IsValid()
+}
+
+// ValidStatuses returns enabled defaults followed by custom names alphabetically.
+func (c *Config) ValidStatuses() []tk.Status {
+	statuses := make([]tk.Status, 0)
+	for _, status := range tk.ValidStatuses {
+		if c.StatusEnabled(status) {
+			statuses = append(statuses, status)
+		}
+	}
+	var custom []string
+	if c != nil {
+		for name, enabled := range c.Status {
+			if enabled && !tk.Status(name).IsValid() {
+				custom = append(custom, name)
+			}
+		}
+	}
+	sort.Strings(custom)
+	for _, name := range custom {
+		statuses = append(statuses, tk.Status(name))
+	}
+	return statuses
+}
+
+// ParseStatus validates a status against this project's enabled names.
+func (c *Config) ParseStatus(value string) (tk.Status, error) {
+	status := tk.Status(value)
+	if !c.StatusEnabled(status) {
+		var names []string
+		for _, allowed := range c.ValidStatuses() {
+			names = append(names, string(allowed))
+		}
+		return "", fmt.Errorf("invalid status: %s (enabled statuses: %s)", value, strings.Join(names, ", "))
+	}
+	return status, nil
 }

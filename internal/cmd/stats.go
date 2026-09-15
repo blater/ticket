@@ -61,7 +61,17 @@ func outputStatsText(w io.Writer, stats tk.Stats) error {
 	if _, err := fmt.Fprintln(w, "By Status:"); err != nil {
 		return err
 	}
-	statusOrder := statusStrings(tk.ValidStatuses)
+	statusOrder := statusStrings(cfg.ValidStatuses())
+	// Include historical statuses even if they have since been disabled.
+	seen := make(map[string]bool)
+	for _, status := range statusOrder {
+		seen[status] = true
+	}
+	for _, status := range sortedKeys(stats.ByStatus) {
+		if !seen[status] {
+			statusOrder = append(statusOrder, status)
+		}
+	}
 	maxStatusLen := maxKeyLen(statusOrder)
 	for _, status := range statusOrder {
 		count := stats.ByStatus[status]

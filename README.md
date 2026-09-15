@@ -148,7 +148,7 @@ Then use `/tk` to get a comprehensive command reference and workflow guide.
 | `start <id>` | Mark as in_progress |
 | `close <id>` | Verify configured delivery metadata and mark as closed |
 | `reopen <id>` | Revert to open status |
-| `status <id> <status>` | Update status (open\|in_progress\|closed) |
+| `status <id> <status>` | Update status (defaults: open\|in_progress\|closed; configurable) |
 | `validate` | Validate ticket graph and Git delivery links |
 
 ### Create Options
@@ -370,6 +370,48 @@ Use any unique substring of a ticket ID:
 tk show arag      # matches tic-aragorn
 tk start gand     # matches tic-gandalf
 ```
+
+### Configurable Statuses
+
+The default statuses are exactly `open`, `in_progress`, and `closed`. Use the
+optional `status:` mapping in `ticket.yaml` to override individual names:
+
+```yaml
+tickets-directory: docs/tickets
+status:
+  open: false
+  in_progress: false
+  close: false
+  planned: true
+  scheduled: true
+  active: true
+  blocked: true
+  done: true
+  closed: true
+```
+
+`true` enables a name and `false` disables it. Unspecified defaults remain enabled;
+custom names are enabled only when explicitly set to `true`. `close` and `closed`
+are distinct names (`close` is not a default status). At least one status must
+remain enabled. Names are case-sensitive and cannot be empty or contain whitespace.
+
+```sh
+tk create "Plan the release" --status planned
+tk status <id> active
+tk list --status active
+```
+
+Creation still defaults to `open`; if it is disabled, supply `--status`.
+Imports accept enabled custom statuses and default missing statuses to `open`,
+which must be enabled. `start`, `reopen`, `close`, and their bulk equivalents
+retain their existing targets (`in_progress`, `open`, `closed`) and fail if the
+target is disabled. Use `tk status` for custom transitions.
+
+Custom names do not define lifecycle roles: only `closed` counts as closed for
+listings, dependency resolution, and closure checks. `done` is an ordinary custom
+status, and the `blocked` command still checks unresolved dependencies. Existing
+tickets are not rewritten when configuration changes; disabled statuses remain
+readable and filterable, appear in statistics, and are reported by `tk validate`.
 
 ### Directory Discovery
 
